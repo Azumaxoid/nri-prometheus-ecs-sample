@@ -7,7 +7,7 @@ set -e
 
 if [ $# -lt 3 ]; then
     echo "使用方法: $0 <AWS_REGION> <AWS_ACCOUNT_ID> <CLUSTER_NAME> [SUBNET_ID] [SECURITY_GROUP_ID] [NEW_RELIC_LICENSE_KEY]"
-    echo "例: $0 us-east-1 123456789012 demo-ecs-cluster subnet-xxxxx sg-xxxxx"
+    echo "例: $0 us-east-1 123456789012 nri-prometheus-ecs-demo subnet-xxxxx sg-xxxxx"
     echo ""
     echo "SUBNET_IDとSECURITY_GROUP_IDが指定されない場合、自動で取得または作成を試みます"
     exit 1

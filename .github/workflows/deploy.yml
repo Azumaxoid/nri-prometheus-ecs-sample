@@ -8,7 +8,7 @@ on:
 
 env:
   AWS_REGION: ap-northeast-1
-  ECS_CLUSTER_NAME: demo-ecs-cluster
+  ECS_CLUSTER_NAME: nri-prometheus-ecs-demo
   APP_ECR_REPO: demo-app
   NRI_ECR_REPO: nri-prometheus
   ECS_TASK_EXECUTION_ROLE: ecsTaskExecutionRole

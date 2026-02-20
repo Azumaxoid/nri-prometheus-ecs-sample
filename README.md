@@ -106,7 +106,7 @@ aws iam attach-role-policy \
 
 リポジトリのSettings > Secrets and variables > Actions > Variablesで以下を設定（または`.github/workflows/deploy.yml`の`env`セクションを直接編集）：
 
-- `ECS_CLUSTER_NAME`: ECSクラスタ名（デフォルト: `demo-ecs-cluster`）
+- `ECS_CLUSTER_NAME`: ECSクラスタ名（デフォルト: `nri-prometheus-ecs-demo`）
 - `AWS_REGION`: AWSリージョン（デフォルト: `ap-northeast-1`）
 - `ECS_TASK_EXECUTION_ROLE`: ECSタスク実行ロール名（デフォルト: `ecsTaskExecutionRole`）
 
@@ -205,12 +205,12 @@ scrape_configs:
 
 例:
 ```bash
-./scripts/deploy.sh us-east-1 123456789012 demo-ecs-cluster
+./scripts/deploy.sh us-east-1 123456789012 nri-prometheus-ecs-demo
 ```
 
 または、License Keyを直接指定する場合:
 ```bash
-./scripts/deploy.sh us-east-1 123456789012 demo-ecs-cluster YOUR_NEW_RELIC_LICENSE_KEY
+./scripts/deploy.sh us-east-1 123456789012 nri-prometheus-ecs-demo YOUR_NEW_RELIC_LICENSE_KEY
 ```
 
 ### 6. ECSサービスの作成

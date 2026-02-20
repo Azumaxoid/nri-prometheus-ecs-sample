@@ -12,7 +12,7 @@
       "environment": [
         {
           "name": "CLUSTER_NAME",
-          "value": "demo-ecs-cluster"
+          "value": "nri-prometheus-ecs-demo"
         }
       ],
       "secrets": [
