@@ -10,9 +10,9 @@ scrape_configs:
     static_configs:
       - targets:
           # アプリケーションのメトリクスエンドポイントURL
-          # ECSサービス名とポートに合わせて変更
-          # 例: "demo-app-service:8080" または "http://<IP>:8080"
-          - "demo-app-service:8080"
+          # docker-compose環境: "demo-app:8080"
+          # ECS環境: "demo-app-service:8080" または "http://<IP>:8080"
+          - "demo-app:8080"
     # メトリクスフィルタリング（デモ用に1メトリクスのみ）
     metric_relabel_configs:
       - source_labels: [__name__]

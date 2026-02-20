@@ -33,7 +33,36 @@ Goアプリケーション (ECSサービス、ポート8080)
 
 ## セットアップ手順
 
-### 方法A: GitHub Actionsを使用（推奨）
+### 方法A: ローカルでdocker-composeを使用（開発・テスト用）
+
+ローカル環境で動作確認する場合：
+
+```bash
+# .envファイルを作成（NEW_RELIC_LICENSE_KEYを設定）
+cp .env.example .env
+# .envファイルを編集してNEW_RELIC_LICENSE_KEYを設定
+
+# ビルドと起動
+docker-compose up --build
+
+# バックグラウンドで起動
+docker-compose up -d --build
+
+# ログを確認
+docker-compose logs -f
+
+# 停止
+docker-compose down
+```
+
+アプリケーションにアクセス：
+- アプリケーション: http://localhost:8080
+- メトリクス: http://localhost:8080/metrics
+- ヘルスチェック: http://localhost:8080/health
+
+**注意**: docker-compose環境では、`nri-prometheus/config.yml`の`targets`が`demo-app:8080`になっています（docker-composeのサービス名を使用）。
+
+### 方法B: GitHub Actionsを使用（推奨・本番デプロイ用）
 
 GitHub Actionsを使用すると、mac arm64環境でも問題なくlinux/amd64用のイメージをビルドできます。
 

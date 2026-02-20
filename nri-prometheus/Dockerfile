@@ -1,7 +1,4 @@
 FROM newrelic/nri-prometheus:latest
 
-# 設定ディレクトリを作成
-RUN mkdir -p /etc/nri-prometheus
-
-# 設定ファイルをコピー（nri-prometheusが期待するパス）
+# 設定ファイルをコピー（COPYコマンドで親ディレクトリも自動的に作成される）
 COPY config.yml /etc/nri-prometheus/config.yml

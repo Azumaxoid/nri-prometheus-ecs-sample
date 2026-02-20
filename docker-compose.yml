@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  demo-app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    container_name: demo-app
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - demo-network
+
+  nri-prometheus:
+    build:
+      context: ./nri-prometheus
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    container_name: nri-prometheus
+    environment:
+      - NRIA_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY:-}
+    depends_on:
+      - demo-app
+    networks:
+      - demo-network
+    # 設定ファイルのパスを環境変数で指定（オプション）
+    # command: ["-config", "/etc/nri-prometheus/config.yml"]
+
+networks:
+  demo-network:
+    driver: bridge
+
