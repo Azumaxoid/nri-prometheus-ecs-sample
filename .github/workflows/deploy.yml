@@ -11,6 +11,7 @@ env:
   ECS_CLUSTER_NAME: demo-ecs-cluster
   APP_ECR_REPO: demo-app
   NRI_ECR_REPO: nri-prometheus
+  ECS_TASK_EXECUTION_ROLE: ecsTaskExecutionRole
 
 jobs:
   build-and-deploy:
@@ -94,15 +95,18 @@ jobs:
         run: |
           ACCOUNT_ID=${{ steps.aws-account.outputs.account-id }}
           REGION=${{ env.AWS_REGION }}
+          EXECUTION_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${{ env.ECS_TASK_EXECUTION_ROLE }}"
           
           # アプリケーションタスク定義の更新
           sed -i "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com|g" ecs/app-task-definition.json
           sed -i "s|YOUR_REGION|${REGION}|g" ecs/app-task-definition.json
+          sed -i "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" ecs/app-task-definition.json
           
           # nri-prometheusタスク定義の更新
           sed -i "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com|g" ecs/nri-prometheus-task-definition-simple.json
           sed -i "s|YOUR_REGION|${REGION}|g" ecs/nri-prometheus-task-definition-simple.json
           sed -i "s|YOUR_ACCOUNT_ID|${ACCOUNT_ID}|g" ecs/nri-prometheus-task-definition-simple.json
+          sed -i "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" ecs/nri-prometheus-task-definition-simple.json
           
           # New Relic License KeyをSecrets Managerから取得して設定（オプション）
           if [ -n "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then

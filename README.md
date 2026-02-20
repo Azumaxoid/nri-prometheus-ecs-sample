@@ -29,6 +29,7 @@ Goアプリケーション (ECSサービス、ポート8080)
 - New RelicアカウントとLicense Keyを取得済み
 - ECSクラスタ（Fargate）が作成済み
 - VPC、サブネット、セキュリティグループが設定済み
+- **ECSタスク実行ロール（ecsTaskExecutionRole）が作成済み**（CloudWatch Logsへの書き込み権限が必要）
 
 ## セットアップ手順
 
@@ -44,19 +45,48 @@ GitHub Actionsを使用すると、mac arm64環境でも問題なくlinux/amd64�
 - `AWS_SECRET_ACCESS_KEY`: AWSシークレットアクセスキー
 - `NEW_RELIC_LICENSE_KEY`: New Relic License Key（オプション、タスク定義で直接設定する場合は不要）
 
-#### 2. ワークフローの環境変数を設定（オプション）
+#### 2. ECSタスク実行ロールの作成（初回のみ）
+
+FargateでCloudWatch Logsを使用するために、ECSタスク実行ロールが必要です。以下のコマンドで作成してください：
+
+```bash
+# タスク実行ロールの作成
+aws iam create-role \
+    --role-name ecsTaskExecutionRole \
+    --assume-role-policy-document '{
+      "Version": "2012-10-17",
+      "Statement": [{
+        "Effect": "Allow",
+        "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+        "Action": "sts:AssumeRole"
+      }]
+    }'
+
+# CloudWatch Logsへの書き込み権限を付与
+aws iam attach-role-policy \
+    --role-name ecsTaskExecutionRole \
+    --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+# ECRへのアクセス権限を付与（既に含まれている場合もあります）
+aws iam attach-role-policy \
+    --role-name ecsTaskExecutionRole \
+    --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+```
+
+#### 3. ワークフローの環境変数を設定（オプション）
 
 リポジトリのSettings > Secrets and variables > Actions > Variablesで以下を設定（または`.github/workflows/deploy.yml`の`env`セクションを直接編集）：
 
 - `ECS_CLUSTER_NAME`: ECSクラスタ名（デフォルト: `demo-ecs-cluster`）
 - `AWS_REGION`: AWSリージョン（デフォルト: `ap-northeast-1`）
+- `ECS_TASK_EXECUTION_ROLE`: ECSタスク実行ロール名（デフォルト: `ecsTaskExecutionRole`）
 
-#### 3. デプロイの実行
+#### 4. デプロイの実行
 
 - `main`ブランチにプッシュすると自動的にデプロイが実行されます
 - 手動実行する場合は、Actionsタブから`Build and Deploy to ECS`ワークフローを選択して`Run workflow`をクリック
 
-#### 4. ECSサービスの作成（初回のみ）
+#### 5. ECSサービスの作成（初回のみ）
 
 GitHub Actionsはタスク定義を登録しますが、ECSサービスは作成しません。初回のみ、以下のコマンドでサービスを作成してください：
 
