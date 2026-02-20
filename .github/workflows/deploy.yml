@@ -110,6 +110,7 @@ jobs:
           
           # New Relic License KeyをSecrets Managerから取得して設定（オプション）
           if [ -n "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
+            sed -i "s|YOUR_NEW_RELIC_LICENSE_KEY|${{ secrets.NEW_RELIC_LICENSE_KEY }}|g" ecs/nri-prometheus-task-definition.json
             sed -i "s|YOUR_NEW_RELIC_LICENSE_KEY|${{ secrets.NEW_RELIC_LICENSE_KEY }}|g" ecs/nri-prometheus-task-definition-simple.json
           fi
 
