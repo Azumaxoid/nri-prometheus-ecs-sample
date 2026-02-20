@@ -1,6 +1,12 @@
 # nri-prometheus設定ファイル
 # このファイルは /etc/nri-prometheus/config.yml に配置されます
 
+# クラスタ名（必須）
+clustername: "nri-prometheus-ecs-demo"
+
+# スタンドアロンモード（Infrastructure Agent不要）
+standalone: true
+
 # スクレイピング設定
 scrape_configs:
   # アプリケーション1のメトリクスエンドポイント
