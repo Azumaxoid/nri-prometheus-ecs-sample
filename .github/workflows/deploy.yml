@@ -72,8 +72,11 @@ jobs:
           echo "ECR Base: $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
 
       - name: Create or update Secrets Manager secret
-        if: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' }}
         run: |
+          if [ -z "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
+            echo "NEW_RELIC_LICENSE_KEY secret is not set. Skipping Secrets Manager setup."
+            exit 0
+          fi
           SECRET_NAME="newrelic/ecs-demo-license-key"
           # シークレットが存在するか確認
           if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${{ env.AWS_REGION }} 2>/dev/null; then
