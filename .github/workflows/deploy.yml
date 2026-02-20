@@ -451,16 +451,33 @@ jobs:
       - name: Get application access info
         id: app-info
         run: |
-          echo "Waiting for tasks to start..."
-          sleep 30
+          echo "Waiting for service to stabilize after deployment..."
           
-          # 最大5回までリトライ（タスクが起動するまで待つ）
-          MAX_RETRIES=5
-          RETRY_COUNT=0
-          APP_TASK_ARN=""
+          # サービスの状態を監視して、新しいタスクが起動するまで待つ
+          MAX_WAIT_TIME=300  # 最大5分
+          CHECK_INTERVAL=10  # 10秒ごとにチェック
+          ELAPSED=0
+          LAST_TASK_ARN=""
+          STABLE_COUNT=0
           
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            # アプリケーションタスクのARNを取得（RUNNING状態のもの）
+          echo "Monitoring service for new task deployment..."
+          
+          while [ $ELAPSED -lt $MAX_WAIT_TIME ]; do
+            # サービスの状態を確認
+            SERVICE_STATUS=$(aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --services demo-app-service \
+              --region ${{ env.AWS_REGION }} \
+              --query "services[0].[status,runningCount,desiredCount]" \
+              --output text 2>/dev/null || echo "UNKNOWN 0 0")
+            
+            STATUS=$(echo $SERVICE_STATUS | cut -d' ' -f1)
+            RUNNING_COUNT=$(echo $SERVICE_STATUS | cut -d' ' -f2)
+            DESIRED_COUNT=$(echo $SERVICE_STATUS | cut -d' ' -f3)
+            
+            echo "[${ELAPSED}s] Status: $STATUS, Running: $RUNNING_COUNT/$DESIRED_COUNT"
+            
+            # 実行中のタスクを取得
             APP_TASK_ARN=$(aws ecs list-tasks \
               --cluster ${{ env.ECS_CLUSTER_NAME }} \
               --service-name demo-app-service \
@@ -470,15 +487,33 @@ jobs:
               --output text 2>/dev/null || echo "")
             
             if [ -n "$APP_TASK_ARN" ] && [ "$APP_TASK_ARN" != "None" ]; then
-              echo "Found running task: $APP_TASK_ARN"
-              break
+              # タスクの状態を確認
+              TASK_STATUS=$(aws ecs describe-tasks \
+                --cluster ${{ env.ECS_CLUSTER_NAME }} \
+                --tasks "$APP_TASK_ARN" \
+                --region ${{ env.AWS_REGION }} \
+                --query "tasks[0].lastStatus" \
+                --output text 2>/dev/null || echo "UNKNOWN")
+              
+              if [ "$TASK_STATUS" == "RUNNING" ]; then
+                # タスクが変わったか確認（再作成された場合）
+                if [ "$APP_TASK_ARN" != "$LAST_TASK_ARN" ]; then
+                  echo "New task detected: $APP_TASK_ARN"
+                  LAST_TASK_ARN="$APP_TASK_ARN"
+                  STABLE_COUNT=0
+                else
+                  STABLE_COUNT=$((STABLE_COUNT + 1))
+                  # 同じタスクが30秒以上安定している場合、準備完了とみなす
+                  if [ $STABLE_COUNT -ge 3 ]; then
+                    echo "Task is stable. Getting access information..."
+                    break
+                  fi
+                fi
+              fi
             fi
             
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-              echo "Task not running yet. Retrying in 10 seconds... ($RETRY_COUNT/$MAX_RETRIES)"
-              sleep 10
-            fi
+            sleep $CHECK_INTERVAL
+            ELAPSED=$((ELAPSED + CHECK_INTERVAL))
           done
           
           if [ -n "$APP_TASK_ARN" ] && [ "$APP_TASK_ARN" != "None" ]; then
@@ -491,24 +526,41 @@ jobs:
               --output text 2>/dev/null || echo "")
             
             if [ -n "$ENI_ID" ] && [ "$ENI_ID" != "None" ]; then
-              # パブリックIPを取得
-              PUBLIC_IP=$(aws ec2 describe-network-interfaces \
-                --network-interface-ids "$ENI_ID" \
-                --region ${{ env.AWS_REGION }} \
-                --query "NetworkInterfaces[0].Association.PublicIp" \
-                --output text 2>/dev/null || echo "")
+              # パブリックIPを取得（最大3回リトライ）
+              PUBLIC_IP=""
+              for i in 1 2 3; do
+                PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+                  --network-interface-ids "$ENI_ID" \
+                  --region ${{ env.AWS_REGION }} \
+                  --query "NetworkInterfaces[0].Association.PublicIp" \
+                  --output text 2>/dev/null || echo "")
+                
+                if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
+                  break
+                fi
+                echo "Waiting for public IP assignment... (attempt $i/3)"
+                sleep 5
+              done
               
               if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
                 echo "app-public-ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
                 echo "✓ Application is accessible at: http://$PUBLIC_IP:8080"
                 echo "✓ Metrics endpoint: http://$PUBLIC_IP:8080/metrics"
                 
-                # アクセステスト
-                if curl -s -f -m 5 "http://$PUBLIC_IP:8080/health" > /dev/null; then
-                  echo "✓ Health check passed"
-                else
-                  echo "⚠️  Health check failed - application may still be starting"
-                fi
+                # アクセステスト（最大3回リトライ）
+                for i in 1 2 3; do
+                  if curl -s -f -m 5 "http://$PUBLIC_IP:8080/health" > /dev/null; then
+                    echo "✓ Health check passed"
+                    break
+                  else
+                    if [ $i -lt 3 ]; then
+                      echo "Health check failed, retrying in 5 seconds... (attempt $i/3)"
+                      sleep 5
+                    else
+                      echo "⚠️  Health check failed - application may still be starting"
+                    fi
+                  fi
+                done
               else
                 echo "⚠️  Public IP not yet assigned. Please check AWS console."
               fi
@@ -516,7 +568,7 @@ jobs:
               echo "⚠️  Could not get network interface ID"
             fi
           else
-            echo "⚠️  No running tasks found. Checking service status..."
+            echo "⚠️  No running tasks found after waiting. Checking service status..."
             aws ecs describe-services \
               --cluster ${{ env.ECS_CLUSTER_NAME }} \
               --services demo-app-service \
