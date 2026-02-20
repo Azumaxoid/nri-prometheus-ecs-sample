@@ -71,6 +71,19 @@ jobs:
           echo "account-id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
           echo "ECR Base: $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
 
+      - name: Create ECS cluster if not exists
+        run: |
+          # クラスタが存在するか確認
+          if aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query 'clusters[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "ECS cluster ${{ env.ECS_CLUSTER_NAME }} already exists"
+          else
+            echo "Creating ECS cluster: ${{ env.ECS_CLUSTER_NAME }}"
+            aws ecs create-cluster \
+              --cluster-name ${{ env.ECS_CLUSTER_NAME }} \
+              --region ${{ env.AWS_REGION }}
+            echo "ECS cluster created"
+          fi
+
       - name: Create or update Secrets Manager secret
         run: |
           if [ -z "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
