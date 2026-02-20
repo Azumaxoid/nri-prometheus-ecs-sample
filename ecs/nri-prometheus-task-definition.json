@@ -1,13 +1,13 @@
 {
-  "family": "nri-prometheus",
+  "family": "nrdot",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "256",
   "memory": "512",
   "containerDefinitions": [
     {
-      "name": "nri-prometheus",
-      "image": "newrelic/nri-prometheus:latest",
+      "name": "nrdot",
+      "image": "newrelic/nrdot:latest",
       "essential": true,
       "environment": [
         {
@@ -24,15 +24,15 @@
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/nri-prometheus",
+          "awslogs-group": "/ecs/nrdot",
           "awslogs-region": "YOUR_REGION",
           "awslogs-stream-prefix": "ecs"
         }
       },
       "mountPoints": [
         {
-          "sourceVolume": "nri-prometheus-config",
-          "containerPath": "/etc/newrelic-infra/integrations.d",
+          "sourceVolume": "nrdot-config",
+          "containerPath": "/etc/otelcol",
           "readOnly": true
         }
       ]
@@ -40,7 +40,7 @@
   ],
   "volumes": [
     {
-      "name": "nri-prometheus-config",
+      "name": "nrdot-config",
       "efsVolumeConfiguration": {
         "fileSystemId": "YOUR_EFS_FILE_SYSTEM_ID",
         "rootDirectory": "/",

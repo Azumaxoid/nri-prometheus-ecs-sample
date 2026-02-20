@@ -1,7 +1,8 @@
-FROM newrelic/nri-prometheus:latest
+FROM newrelic/nrdot:latest
 
 # 設定ファイルをコピー
-# nri-prometheusは /etc/newrelic-infra/integrations.d/ または /etc/nri-prometheus/ を確認します
-# 両方のパスにコピーして確実に読み込まれるようにします
-COPY config.yml /etc/newrelic-infra/integrations.d/nri-prometheus-config.yml
-COPY config.yml /etc/nri-prometheus/config.yml
+# NRDOT (OpenTelemetry Collector) は /etc/otelcol/config.yaml を確認します
+COPY config.yml /etc/otelcol/config.yaml
+
+# デフォルトのコマンドでNRDOTを起動
+CMD ["--config", "/etc/otelcol/config.yaml"]

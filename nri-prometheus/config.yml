@@ -1,44 +1,49 @@
-# nri-prometheus設定ファイル
-# このファイルは /etc/nri-prometheus/config.yml に配置されます
+# NRDOT (OpenTelemetry Collector) 設定ファイル
+# このファイルは /etc/otelcol/config.yaml に配置されます
 
-# クラスタ名（必須）
-clustername: "nri-prometheus-ecs-demo"
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        # アプリケーションのメトリクスエンドポイント
+        - job_name: "demo-app"
+          scrape_interval: 30s
+          metrics_path: "/metrics"
+          static_configs:
+            - targets:
+                # アプリケーションのメトリクスエンドポイントURL
+                # docker-compose環境: "demo-app:8080"
+                # ECS環境（サイドカー構成）: "localhost:8080"（同じタスク内のコンテナ）
+                - "localhost:8080"
+          # メトリクスフィルタリング（デモ用に1メトリクスのみ）
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "http_requests_total"
+              action: keep
 
-# スタンドアロンモード（Infrastructure Agent不要）
-standalone: true
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+  # リソース属性の追加（オプション）
+  resource:
+    attributes:
+      - key: service.name
+        value: demo-app
+        action: upsert
 
-# License Key（環境変数NRIA_LICENSE_KEYから読み取られます）
-# 設定ファイルにフィールドを追加（値は環境変数から読み取られる）
-license_key: ""
+exporters:
+  otlp/newrelic:
+    endpoint: https://otlp.nr-data.net:4317
+    headers:
+      api-key: ${NRIA_LICENSE_KEY}
+    tls:
+      insecure: false
 
-# ホスト名（環境変数NRIA_HOSTNAMEから読み取られます）
-# 起動スクリプト（entrypoint.sh）がECSタスクメタデータからタスクIDを取得して
-# 環境変数NRIA_HOSTNAMEに設定します
-# hostname: ""  # 環境変数から自動的に設定されるため、ここでは空のまま
-
-# HTTPサーバーのリスニング設定（サイドカー構成）
-# アプリケーションコンテナがポート8080を使用するため、nri-prometheusは別のポート（8081）でリスニング
-# 注意: nri-prometheusはメトリクスをスクレイプする側なので、通常はHTTPサーバーは不要ですが、
-# 一部の機能で必要になる場合があるため、ポート8081に変更して競合を回避
-server:
-  port: 8081
-
-# スクレイピング設定
-scrape_configs:
-  # アプリケーション1のメトリクスエンドポイント
-  - job_name: "demo-app"
-    scrape_interval: 30s
-    metrics_path: "/metrics"
-    static_configs:
-      - targets:
-          # アプリケーションのメトリクスエンドポイントURL
-          # docker-compose環境: "demo-app:8080"
-          # ECS環境（サイドカー構成）: "localhost:8080"（同じタスク内のコンテナ）
-          # ECS環境（別タスク）: "demo-app-service:8080" または "http://<IP>:8080"
-          - "localhost:8080"
-    # メトリクスフィルタリング（デモ用に1メトリクスのみ）
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: "http_requests_total"
-        action: keep
+service:
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      processors: [batch, resource]
+      exporters: [otlp/newrelic]
 

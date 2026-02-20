@@ -1,5 +1,5 @@
 {
-  "family": "nri-prometheus",
+  "family": "nrdot",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "256",
@@ -7,7 +7,7 @@
   "executionRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole",
   "containerDefinitions": [
     {
-      "name": "nri-prometheus",
+      "name": "nrdot",
       "image": "YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/nri-prometheus:latest",
       "essential": true,
       "environment": [
@@ -25,7 +25,7 @@
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/nri-prometheus",
+          "awslogs-group": "/ecs/nrdot",
           "awslogs-region": "YOUR_REGION",
           "awslogs-stream-prefix": "ecs"
         }

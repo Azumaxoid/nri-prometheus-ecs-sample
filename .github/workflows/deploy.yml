@@ -174,17 +174,18 @@ jobs:
             ${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.APP_ECR_REPO }}:${{ steps.tag.outputs.tag }}
             ${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.APP_ECR_REPO }}:latest
 
-      - name: Update nri-prometheus config with license key
+      - name: Update NRDOT config with license key
         run: |
           if [ -n "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
-            # 設定ファイルにLicense Keyを書き込む
-            sed -i "s|license_key: \"\"|license_key: \"${{ secrets.NEW_RELIC_LICENSE_KEY }}\"|g" nri-prometheus/config.yml
-            echo "License key written to config file"
+            # NRDOTは環境変数NRIA_LICENSE_KEYを使用するため、設定ファイルの更新は不要
+            # ただし、設定ファイル内のapi-keyプレースホルダーを更新（オプション）
+            sed -i "s|api-key: \${NRIA_LICENSE_KEY}|api-key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}|g" nri-prometheus/config.yml || true
+            echo "License key will be provided via environment variable NRIA_LICENSE_KEY"
           else
-            echo "NEW_RELIC_LICENSE_KEY not set, keeping empty license_key in config"
+            echo "NEW_RELIC_LICENSE_KEY not set, will use environment variable from task definition"
           fi
 
-      - name: Build and push nri-prometheus image
+      - name: Build and push NRDOT image
         uses: docker/build-push-action@v5
         with:
           context: ./nri-prometheus
@@ -208,7 +209,7 @@ jobs:
             echo "Warning: Could not get secret ARN, using fallback: $SECRET_ARN"
           fi
           
-          # アプリケーションタスク定義の更新（nri-prometheusはサイドカーとして含まれています）
+          # アプリケーションタスク定義の更新（nrdotはサイドカーとして含まれています）
           sed -i "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com|g" ecs/app-task-definition.json
           sed -i "s|YOUR_REGION|${REGION}|g" ecs/app-task-definition.json
           sed -i "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" ecs/app-task-definition.json
@@ -219,11 +220,11 @@ jobs:
       - name: Create CloudWatch Logs groups
         run: |
           aws logs create-log-group --log-group-name "/ecs/demo-app" --region ${{ env.AWS_REGION }} || true
-          # サイドカー構成では、nri-prometheusはアプリケーションと同じロググループを使用します
+          # サイドカー構成では、nrdotはアプリケーションと同じロググループを使用します
 
       - name: Register ECS task definitions
         run: |
-          # アプリケーションタスク定義を登録（nri-prometheusはサイドカーとして含まれています）
+          # アプリケーションタスク定義を登録（nrdotはサイドカーとして含まれています）
           aws ecs register-task-definition \
             --cli-input-json file://ecs/app-task-definition.json \
             --region ${{ env.AWS_REGION }}
@@ -323,7 +324,7 @@ jobs:
               --region ${{ env.AWS_REGION }}
           fi
           
-          # 注意: サイドカー構成では、nri-prometheusは独立したサービスではなく、
+          # 注意: サイドカー構成では、nrdotは独立したサービスではなく、
           # アプリケーションタスク定義内に含まれています
 
       - name: Check task status and troubleshoot
@@ -379,9 +380,9 @@ jobs:
             fi
           fi
           
-          # サイドカー構成では、nri-prometheusはアプリケーションタスク内に含まれています
+          # サイドカー構成では、nrdotはアプリケーションタスク内に含まれています
           echo ""
-          echo "=== Checking nri-prometheus sidecar container ==="
+          echo "=== Checking nrdot sidecar container ==="
           
           if [ -n "$APP_TASK_ARN" ] && [ "$APP_TASK_ARN" != "None" ]; then
             # タスク内の全コンテナの状態を確認
@@ -393,7 +394,7 @@ jobs:
               --query "tasks[0].containers[*].[name,lastStatus,healthStatus,reason]" \
               --output table || true
           else
-            echo "No demo-app task found yet. nri-prometheus will start with the app task."
+            echo "No demo-app task found yet. nrdot will start with the app task."
           fi
           
           # Secrets Managerのシークレットが存在するか確認
@@ -408,9 +409,9 @@ jobs:
             echo "  Please create it or set NEW_RELIC_LICENSE_KEY in GitHub Secrets"
           fi
           
-          # nri-prometheusのログを確認（サイドカー構成ではアプリケーションと同じロググループ）
+          # nrdotのログを確認（サイドカー構成ではアプリケーションと同じロググループ）
           echo ""
-          echo "=== nri-prometheus CloudWatch Logs (last 50 lines, filtered) ==="
+          echo "=== nrdot CloudWatch Logs (last 50 lines, filtered) ==="
           LOG_STREAM=$(aws logs describe-log-streams \
             --log-group-name "/ecs/demo-app" \
             --region ${{ env.AWS_REGION }} \
@@ -428,7 +429,7 @@ jobs:
               --region ${{ env.AWS_REGION }} \
               --limit 50 \
               --query "events[*].message" \
-              --output text 2>/dev/null | grep -i "nri-prometheus" || echo "No nri-prometheus logs found yet"
+              --output text 2>/dev/null | grep -i "nrdot\|otelcol" || echo "No nrdot logs found yet"
           else
             echo "No log stream found yet"
           fi
@@ -573,7 +574,7 @@ jobs:
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **App Image**: \`${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.APP_ECR_REPO }}:${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **nri-prometheus Image**: \`${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.NRI_ECR_REPO }}:${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **NRDOT Image**: \`${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.NRI_ECR_REPO }}:${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **ECS Cluster**: \`${{ env.ECS_CLUSTER_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Region**: \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

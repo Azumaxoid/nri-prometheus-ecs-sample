@@ -39,8 +39,8 @@ sed -i.bak "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ECR_BASE}|g" "
 sed -i.bak "s|YOUR_REGION|${AWS_REGION}|g" "$APP_TASK_DEF"
 sed -i.bak "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" "$APP_TASK_DEF"
 
-# 注意: サイドカー構成では、nri-prometheusはアプリケーションタスク定義内に含まれています
-# タスク定義ファイル内のnri-prometheusコンテナのイメージURIを更新
+# 注意: サイドカー構成では、nrdotはアプリケーションタスク定義内に含まれています
+# タスク定義ファイル内のnrdotコンテナのイメージURIを更新
 if [ -n "$NEW_RELIC_LICENSE_KEY" ]; then
     echo "New Relic License Key provided. Please ensure it's set in AWS Secrets Manager or task definition."
 else
@@ -51,14 +51,14 @@ fi
 echo ""
 echo "Creating CloudWatch Logs groups..."
 aws logs create-log-group --log-group-name "/ecs/demo-app" --region "$AWS_REGION" 2>/dev/null || echo "Log group /ecs/demo-app already exists"
-aws logs create-log-group --log-group-name "/ecs/nri-prometheus" --region "$AWS_REGION" 2>/dev/null || echo "Log group /ecs/nri-prometheus already exists"
+aws logs create-log-group --log-group-name "/ecs/nrdot" --region "$AWS_REGION" 2>/dev/null || echo "Log group /ecs/nrdot already exists"
 
 # タスク定義の登録
 echo ""
 echo "Registering task definitions..."
 
-# アプリケーションタスク定義（nri-prometheusはサイドカーとして含まれています）
-echo "Registering demo-app task definition (with nri-prometheus sidecar)..."
+# アプリケーションタスク定義（nrdotはサイドカーとして含まれています）
+echo "Registering demo-app task definition (with nrdot sidecar)..."
 aws ecs register-task-definition \
     --cli-input-json "file://${APP_TASK_DEF}" \
     --region "$AWS_REGION" > /dev/null
@@ -167,7 +167,7 @@ else
     echo "demo-app-service created"
 fi
 
-# 注意: サイドカー構成では、nri-prometheusは独立したサービスではなく、
+# 注意: サイドカー構成では、nrdotは独立したサービスではなく、
 # アプリケーションタスク定義内に含まれています
 
 echo ""
@@ -183,6 +183,6 @@ echo "  PUBLIC_IP=\$(aws ec2 describe-network-interfaces --network-interface-ids
 echo "  echo \"App URL: http://\${PUBLIC_IP}:8080\""
 echo "  echo \"Metrics URL: http://\${PUBLIC_IP}:8080/metrics\""
 echo ""
-echo "Note: nri-prometheus is running as a sidecar container in the demo-app task."
+echo "Note: nrdot is running as a sidecar container in the demo-app task."
 echo "      It uses localhost:8080 to scrape metrics from the demo-app container."
 

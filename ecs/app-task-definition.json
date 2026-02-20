@@ -36,7 +36,7 @@
       }
     },
     {
-      "name": "nri-prometheus",
+      "name": "nrdot",
       "image": "YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/nri-prometheus:latest",
       "essential": false,
       "environment": [
@@ -56,7 +56,7 @@
         "options": {
           "awslogs-group": "/ecs/demo-app",
           "awslogs-region": "YOUR_REGION",
-          "awslogs-stream-prefix": "nri-prometheus"
+          "awslogs-stream-prefix": "nrdot"
         }
       }
     }

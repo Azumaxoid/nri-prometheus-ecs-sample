@@ -17,19 +17,19 @@ if [ -n "$ECS_CONTAINER_METADATA_URI_V4" ]; then
     # タスクARNからタスクID（最後の部分）を抽出
     # 例: arn:aws:ecs:region:account:task/cluster-name/task-id -> task-id
     TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
-    export NRIA_HOSTNAME="$TASK_ID"
-    echo "Setting NRIA_HOSTNAME to task ID: $TASK_ID"
+    export OTEL_RESOURCE_ATTRIBUTES="service.name=demo-app,service.instance.id=${TASK_ID}"
+    echo "Setting OTEL_RESOURCE_ATTRIBUTES with task ID: $TASK_ID"
   else
     echo "Warning: Could not retrieve task ID from metadata endpoint"
   fi
 else
   # ローカル環境やdocker-compose環境の場合のフォールバック
-  if [ -z "$NRIA_HOSTNAME" ]; then
-    export NRIA_HOSTNAME="local-$(hostname)"
-    echo "Using fallback hostname: $NRIA_HOSTNAME"
+  if [ -z "$OTEL_RESOURCE_ATTRIBUTES" ]; then
+    export OTEL_RESOURCE_ATTRIBUTES="service.name=demo-app,service.instance.id=local-$(hostname)"
+    echo "Using fallback resource attributes: $OTEL_RESOURCE_ATTRIBUTES"
   fi
 fi
 
-# nri-prometheusを実行
+# NRDOT (OpenTelemetry Collector) を実行
 exec "$@"
 

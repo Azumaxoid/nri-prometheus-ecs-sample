@@ -42,29 +42,29 @@ echo "Pushing demo-app image..."
 docker push "${ECR_BASE}/demo-app:latest"
 echo "demo-app image pushed successfully"
 
-# nri-prometheusカスタムイメージのビルドとプッシュ
+# NRDOTカスタムイメージのビルドとプッシュ
 echo ""
-echo "Building nri-prometheus custom image (linux/amd64)..."
+echo "Building NRDOT custom image (linux/amd64)..."
 cd "$(dirname "$0")/../nri-prometheus"
 
 # buildxを使用してマルチプラットフォームビルド（より安定）
 if docker buildx version > /dev/null 2>&1; then
     echo "Using Docker buildx for cross-platform build..."
-    docker buildx build --platform linux/amd64 --load -t nri-prometheus:latest .
+    docker buildx build --platform linux/amd64 --load -t nrdot:latest .
 else
     echo "Using standard docker build..."
-    DOCKER_BUILDKIT=1 docker build --platform linux/amd64 -t nri-prometheus:latest .
+    DOCKER_BUILDKIT=1 docker build --platform linux/amd64 -t nrdot:latest .
 fi
 
-docker tag nri-prometheus:latest "${ECR_BASE}/nri-prometheus:latest"
-echo "Pushing nri-prometheus image..."
+docker tag nrdot:latest "${ECR_BASE}/nri-prometheus:latest"
+echo "Pushing NRDOT image..."
 docker push "${ECR_BASE}/nri-prometheus:latest"
-echo "nri-prometheus image pushed successfully"
+echo "NRDOT image pushed successfully"
 
 echo ""
 echo "All images built and pushed successfully!"
 echo ""
 echo "Image URIs:"
 echo "  - ${ECR_BASE}/demo-app:latest"
-echo "  - ${ECR_BASE}/nri-prometheus:latest"
+echo "  - ${ECR_BASE}/nri-prometheus:latest (NRDOT)"
 

@@ -19,21 +19,19 @@ services:
     networks:
       - demo-network
 
-  nri-prometheus:
+  nrdot:
     build:
       context: ./nri-prometheus
       dockerfile: Dockerfile
       platforms:
         - linux/amd64
-    container_name: nri-prometheus
+    container_name: nrdot
     environment:
       - NRIA_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY:-}
     depends_on:
       - demo-app
     networks:
       - demo-network
-    # 設定ファイルのパスを環境変数で指定（オプション）
-    # command: ["-config", "/etc/nri-prometheus/config.yml"]
 
 networks:
   demo-network:
