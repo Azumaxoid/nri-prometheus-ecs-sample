@@ -7,6 +7,9 @@ clustername: "nri-prometheus-ecs-demo"
 # スタンドアロンモード（Infrastructure Agent不要）
 standalone: true
 
+# License Keyは環境変数NRIA_LICENSE_KEYから読み取られます
+# （設定ファイルには記載しません。ECSタスク定義のsecretsセクションで設定されます）
+
 # スクレイピング設定
 scrape_configs:
   # アプリケーション1のメトリクスエンドポイント

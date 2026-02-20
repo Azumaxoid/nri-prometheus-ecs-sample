@@ -19,7 +19,7 @@
       "secrets": [
         {
           "name": "NRIA_LICENSE_KEY",
-          "valueFrom": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/ecs-demo-license-key"
+          "valueFrom": "YOUR_SECRET_ARN"
         }
       ],
       "logConfiguration": {

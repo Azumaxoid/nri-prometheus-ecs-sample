@@ -133,6 +133,7 @@ jobs:
           #   --policy-document "$POLICY_DOCUMENT"
 
       - name: Create or update Secrets Manager secret
+        id: secrets-manager
         run: |
           if [ -z "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
             echo "NEW_RELIC_LICENSE_KEY secret is not set. Skipping Secrets Manager setup."
@@ -153,6 +154,15 @@ jobs:
               --secret-string "${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
               --region ${{ env.AWS_REGION }}
           fi
+          
+          # 実際のARN（サフィックス付き）を取得
+          SECRET_ARN=$(aws secretsmanager describe-secret \
+            --secret-id "$SECRET_NAME" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'ARN' \
+            --output text)
+          echo "Secret ARN: $SECRET_ARN"
+          echo "secret-arn=$SECRET_ARN" >> $GITHUB_OUTPUT
 
       - name: Build and push demo-app image
         uses: docker/build-push-action@v5
@@ -180,6 +190,14 @@ jobs:
           REGION=${{ env.AWS_REGION }}
           EXECUTION_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${{ env.ECS_TASK_EXECUTION_ROLE }}"
           
+          # Secrets ManagerのARNを取得（サフィックス付き）
+          SECRET_ARN="${{ steps.secrets-manager.outputs.secret-arn }}"
+          if [ -z "$SECRET_ARN" ] || [ "$SECRET_ARN" == "" ]; then
+            # フォールバック: シークレット名からARNを構築（サフィックスなし）
+            SECRET_ARN="arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:newrelic/ecs-demo-license-key"
+            echo "Warning: Could not get secret ARN, using fallback: $SECRET_ARN"
+          fi
+          
           # アプリケーションタスク定義の更新
           sed -i "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com|g" ecs/app-task-definition.json
           sed -i "s|YOUR_REGION|${REGION}|g" ecs/app-task-definition.json
@@ -191,8 +209,9 @@ jobs:
           sed -i "s|YOUR_ACCOUNT_ID|${ACCOUNT_ID}|g" ecs/nri-prometheus-task-definition-simple.json
           sed -i "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" ecs/nri-prometheus-task-definition-simple.json
           
-          # Secrets ManagerのARNを更新
-          sed -i "s|arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/ecs-demo-license-key|arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:newrelic/ecs-demo-license-key|g" ecs/nri-prometheus-task-definition-simple.json
+          # Secrets ManagerのARNを更新（サフィックス付きの実際のARNを使用）
+          sed -i "s|YOUR_SECRET_ARN|${SECRET_ARN}|g" ecs/nri-prometheus-task-definition-simple.json
+          sed -i "s|YOUR_SECRET_ARN|${SECRET_ARN}|g" ecs/nri-prometheus-task-definition.json
 
       - name: Create CloudWatch Logs groups
         run: |
