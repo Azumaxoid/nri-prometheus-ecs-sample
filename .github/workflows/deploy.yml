@@ -284,6 +284,48 @@ jobs:
               --region ${{ env.AWS_REGION }}
           fi
 
+      - name: Get application access info
+        id: app-info
+        run: |
+          echo "Waiting for tasks to start..."
+          sleep 30
+          
+          # アプリケーションタスクのARNを取得
+          APP_TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --service-name demo-app-service \
+            --region ${{ env.AWS_REGION }} \
+            --query "taskArns[0]" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$APP_TASK_ARN" ] && [ "$APP_TASK_ARN" != "None" ]; then
+            # タスクのENI IDを取得
+            ENI_ID=$(aws ecs describe-tasks \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --tasks "$APP_TASK_ARN" \
+              --region ${{ env.AWS_REGION }} \
+              --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$ENI_ID" ] && [ "$ENI_ID" != "None" ]; then
+              # パブリックIPを取得
+              PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+                --network-interface-ids "$ENI_ID" \
+                --region ${{ env.AWS_REGION }} \
+                --query "NetworkInterfaces[0].Association.PublicIp" \
+                --output text 2>/dev/null || echo "")
+              
+              if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
+                echo "app-public-ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+                echo "Application is accessible at: http://$PUBLIC_IP:8080"
+              else
+                echo "Public IP not yet assigned. Please check AWS console."
+              fi
+            fi
+          else
+            echo "Task not yet started. Please wait and check AWS console."
+          fi
+
       - name: Output deployment info
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
@@ -292,4 +334,22 @@ jobs:
           echo "- **nri-prometheus Image**: \`${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.NRI_ECR_REPO }}:${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **ECS Cluster**: \`${{ env.ECS_CLUSTER_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Region**: \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.app-info.outputs.app-public-ip }}" ]; then
+            echo "## Application Access" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Application URL**: http://${{ steps.app-info.outputs.app-public-ip }}:8080" >> $GITHUB_STEP_SUMMARY
+            echo "- **Metrics Endpoint**: http://${{ steps.app-info.outputs.app-public-ip }}:8080/metrics" >> $GITHUB_STEP_SUMMARY
+            echo "- **Health Check**: http://${{ steps.app-info.outputs.app-public-ip }}:8080/health" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Application Access" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Task is still starting. To get the access URL, run:" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "TASK_ARN=\$(aws ecs list-tasks --cluster ${{ env.ECS_CLUSTER_NAME }} --service-name demo-app-service --region ${{ env.AWS_REGION }} --query 'taskArns[0]' --output text)" >> $GITHUB_STEP_SUMMARY
+            echo "ENI_ID=\$(aws ecs describe-tasks --cluster ${{ env.ECS_CLUSTER_NAME }} --tasks \$TASK_ARN --region ${{ env.AWS_REGION }} --query 'tasks[0].attachments[0].details[?name==\`networkInterfaceId\`].value' --output text)" >> $GITHUB_STEP_SUMMARY
+            echo "PUBLIC_IP=\$(aws ec2 describe-network-interfaces --network-interface-ids \$ENI_ID --region ${{ env.AWS_REGION }} --query 'NetworkInterfaces[0].Association.PublicIp' --output text)" >> $GITHUB_STEP_SUMMARY
+            echo "echo \"App URL: http://\${PUBLIC_IP}:8080\"" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
 
