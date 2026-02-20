@@ -337,6 +337,57 @@ jobs:
           echo "Checking task status..."
           sleep 10
           
+          # アプリケーションサービスの状態を確認
+          echo "=== Checking demo-app-service ==="
+          APP_SERVICE_STATUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --services demo-app-service \
+            --region ${{ env.AWS_REGION }} \
+            --query "services[0].status" \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+          
+          echo "demo-app-service status: $APP_SERVICE_STATUS"
+          
+          if [ "$APP_SERVICE_STATUS" == "ACTIVE" ]; then
+            APP_RUNNING_COUNT=$(aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --services demo-app-service \
+              --region ${{ env.AWS_REGION }} \
+              --query "services[0].runningCount" \
+              --output text)
+            APP_DESIRED_COUNT=$(aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --services demo-app-service \
+              --region ${{ env.AWS_REGION }} \
+              --query "services[0].desiredCount" \
+              --output text)
+            echo "Running tasks: $APP_RUNNING_COUNT / Desired: $APP_DESIRED_COUNT"
+            
+            if [ "$APP_RUNNING_COUNT" -eq 0 ]; then
+              echo "⚠️  No running tasks. Checking stopped tasks..."
+              APP_TASK_ARN=$(aws ecs list-tasks \
+                --cluster ${{ env.ECS_CLUSTER_NAME }} \
+                --service-name demo-app-service \
+                --desired-status STOPPED \
+                --region ${{ env.AWS_REGION }} \
+                --query "taskArns[0]" \
+                --output text 2>/dev/null || echo "")
+              
+              if [ -n "$APP_TASK_ARN" ] && [ "$APP_TASK_ARN" != "None" ]; then
+                STOPPED_REASON=$(aws ecs describe-tasks \
+                  --cluster ${{ env.ECS_CLUSTER_NAME }} \
+                  --tasks "$APP_TASK_ARN" \
+                  --region ${{ env.AWS_REGION }} \
+                  --query "tasks[0].stoppedReason" \
+                  --output text)
+                echo "Last stopped reason: $STOPPED_REASON"
+              fi
+            fi
+          fi
+          
+          echo ""
+          echo "=== Checking nri-prometheus-service ==="
+          
           # nri-prometheusタスクの状態を確認
           NRI_TASK_ARN=$(aws ecs list-tasks \
             --cluster ${{ env.ECS_CLUSTER_NAME }} \
@@ -403,13 +454,32 @@ jobs:
           echo "Waiting for tasks to start..."
           sleep 30
           
-          # アプリケーションタスクのARNを取得
-          APP_TASK_ARN=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER_NAME }} \
-            --service-name demo-app-service \
-            --region ${{ env.AWS_REGION }} \
-            --query "taskArns[0]" \
-            --output text 2>/dev/null || echo "")
+          # 最大5回までリトライ（タスクが起動するまで待つ）
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          APP_TASK_ARN=""
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # アプリケーションタスクのARNを取得（RUNNING状態のもの）
+            APP_TASK_ARN=$(aws ecs list-tasks \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --service-name demo-app-service \
+              --desired-status RUNNING \
+              --region ${{ env.AWS_REGION }} \
+              --query "taskArns[0]" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$APP_TASK_ARN" ] && [ "$APP_TASK_ARN" != "None" ]; then
+              echo "Found running task: $APP_TASK_ARN"
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Task not running yet. Retrying in 10 seconds... ($RETRY_COUNT/$MAX_RETRIES)"
+              sleep 10
+            fi
+          done
           
           if [ -n "$APP_TASK_ARN" ] && [ "$APP_TASK_ARN" != "None" ]; then
             # タスクのENI IDを取得
@@ -430,13 +500,35 @@ jobs:
               
               if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
                 echo "app-public-ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
-                echo "Application is accessible at: http://$PUBLIC_IP:8080"
+                echo "✓ Application is accessible at: http://$PUBLIC_IP:8080"
+                echo "✓ Metrics endpoint: http://$PUBLIC_IP:8080/metrics"
+                
+                # アクセステスト
+                if curl -s -f -m 5 "http://$PUBLIC_IP:8080/health" > /dev/null; then
+                  echo "✓ Health check passed"
+                else
+                  echo "⚠️  Health check failed - application may still be starting"
+                fi
               else
-                echo "Public IP not yet assigned. Please check AWS console."
+                echo "⚠️  Public IP not yet assigned. Please check AWS console."
               fi
+            else
+              echo "⚠️  Could not get network interface ID"
             fi
           else
-            echo "Task not yet started. Please wait and check AWS console."
+            echo "⚠️  No running tasks found. Checking service status..."
+            aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --services demo-app-service \
+              --region ${{ env.AWS_REGION }} \
+              --query "services[0].[status,runningCount,desiredCount,events[0].message]" \
+              --output table || true
+            echo ""
+            echo "To manually get the access URL, run:"
+            echo "  TASK_ARN=\$(aws ecs list-tasks --cluster ${{ env.ECS_CLUSTER_NAME }} --service-name demo-app-service --region ${{ env.AWS_REGION }} --query 'taskArns[0]' --output text)"
+            echo "  ENI_ID=\$(aws ecs describe-tasks --cluster ${{ env.ECS_CLUSTER_NAME }} --tasks \$TASK_ARN --region ${{ env.AWS_REGION }} --query 'tasks[0].attachments[0].details[?name==\`networkInterfaceId\`].value' --output text)"
+            echo "  PUBLIC_IP=\$(aws ec2 describe-network-interfaces --network-interface-ids \$ENI_ID --region ${{ env.AWS_REGION }} --query 'NetworkInterfaces[0].Association.PublicIp' --output text)"
+            echo "  echo \"App URL: http://\${PUBLIC_IP}:8080\""
           fi
 
       - name: Output deployment info
