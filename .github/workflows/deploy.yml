@@ -71,6 +71,25 @@ jobs:
           echo "account-id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
           echo "ECR Base: $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
 
+      - name: Create or update Secrets Manager secret
+        if: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' }}
+        run: |
+          SECRET_NAME="newrelic/ecs-demo-license-key"
+          # シークレットが存在するか確認
+          if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "Updating existing secret: $SECRET_NAME"
+            aws secretsmanager update-secret \
+              --secret-id "$SECRET_NAME" \
+              --secret-string "${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
+              --region ${{ env.AWS_REGION }}
+          else
+            echo "Creating new secret: $SECRET_NAME"
+            aws secretsmanager create-secret \
+              --name "$SECRET_NAME" \
+              --secret-string "${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
+              --region ${{ env.AWS_REGION }}
+          fi
+
       - name: Build and push demo-app image
         uses: docker/build-push-action@v5
         with:
@@ -108,11 +127,8 @@ jobs:
           sed -i "s|YOUR_ACCOUNT_ID|${ACCOUNT_ID}|g" ecs/nri-prometheus-task-definition-simple.json
           sed -i "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" ecs/nri-prometheus-task-definition-simple.json
           
-          # New Relic License KeyをSecrets Managerから取得して設定（オプション）
-          if [ -n "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
-            sed -i "s|YOUR_NEW_RELIC_LICENSE_KEY|${{ secrets.NEW_RELIC_LICENSE_KEY }}|g" ecs/nri-prometheus-task-definition.json
-            sed -i "s|YOUR_NEW_RELIC_LICENSE_KEY|${{ secrets.NEW_RELIC_LICENSE_KEY }}|g" ecs/nri-prometheus-task-definition-simple.json
-          fi
+          # Secrets ManagerのARNを更新
+          sed -i "s|arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/ecs-demo-license-key|arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:newrelic/ecs-demo-license-key|g" ecs/nri-prometheus-task-definition-simple.json
 
       - name: Create CloudWatch Logs groups
         run: |

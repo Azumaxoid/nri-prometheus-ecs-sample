@@ -10,16 +10,10 @@
       "name": "nri-prometheus",
       "image": "YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/nri-prometheus:latest",
       "essential": true,
-      "environment": [
-        {
-          "name": "NRIA_LICENSE_KEY",
-          "value": "YOUR_NEW_RELIC_LICENSE_KEY"
-        }
-      ],
       "secrets": [
         {
           "name": "NRIA_LICENSE_KEY",
-          "valueFrom": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/license-key"
+          "valueFrom": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/ecs-demo-license-key"
         }
       ],
       "logConfiguration": {

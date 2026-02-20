@@ -11,10 +11,6 @@
       "essential": true,
       "environment": [
         {
-          "name": "NRIA_LICENSE_KEY",
-          "value": "YOUR_NEW_RELIC_LICENSE_KEY"
-        },
-        {
           "name": "CLUSTER_NAME",
           "value": "demo-ecs-cluster"
         }
@@ -22,7 +18,7 @@
       "secrets": [
         {
           "name": "NRIA_LICENSE_KEY",
-          "valueFrom": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/license-key"
+          "valueFrom": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/ecs-demo-license-key"
         }
       ],
       "logConfiguration": {
