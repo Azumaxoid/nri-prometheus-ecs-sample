@@ -1,0 +1,56 @@
+{
+  "family": "nri-prometheus",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "nri-prometheus",
+      "image": "newrelic/nri-prometheus:latest",
+      "essential": true,
+      "environment": [
+        {
+          "name": "NRIA_LICENSE_KEY",
+          "value": "YOUR_NEW_RELIC_LICENSE_KEY"
+        },
+        {
+          "name": "CLUSTER_NAME",
+          "value": "demo-ecs-cluster"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "NRIA_LICENSE_KEY",
+          "valueFrom": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/license-key"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/nri-prometheus",
+          "awslogs-region": "YOUR_REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "mountPoints": [
+        {
+          "sourceVolume": "nri-prometheus-config",
+          "containerPath": "/etc/newrelic-infra/integrations.d",
+          "readOnly": true
+        }
+      ]
+    }
+  ],
+  "volumes": [
+    {
+      "name": "nri-prometheus-config",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "YOUR_EFS_FILE_SYSTEM_ID",
+        "rootDirectory": "/",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}
+

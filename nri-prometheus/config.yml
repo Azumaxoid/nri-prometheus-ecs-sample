@@ -1,0 +1,28 @@
+integrations:
+  - name: nri-prometheus
+    env:
+      # スタンドアロンモード（Infrastructure Agent不要）
+      standalone: true
+      # クラスタ名（ECSクラスタ名に合わせて変更）
+      clustername: "demo-ecs-cluster"
+      # スクレイピング間隔（秒）
+      scrape_interval: 30s
+    config:
+      # スクレイピング設定
+      scrape_configs:
+        # アプリケーション1のメトリクスエンドポイント
+        - job_name: "demo-app"
+          scrape_interval: 30s
+          metrics_path: "/metrics"
+          static_configs:
+            - targets:
+                # アプリケーションのメトリクスエンドポイントURL
+                # ECSサービス名とポートに合わせて変更
+                # 例: "demo-app-service:8080" または "http://demo-app-alb-xxx.us-east-1.elb.amazonaws.com:8080"
+                - "demo-app-service:8080"
+          # メトリクスフィルタリング（デモ用に1メトリクスのみ）
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "http_requests_total"
+              action: keep
+

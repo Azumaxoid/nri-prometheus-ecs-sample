@@ -1,0 +1,165 @@
+name: Build and Deploy to ECS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-northeast-1
+  ECS_CLUSTER_NAME: demo-ecs-cluster
+  APP_ECR_REPO: demo-app
+  NRI_ECR_REPO: nri-prometheus
+
+jobs:
+  build-and-deploy:
+    runs-on: ${{ vars.RUNNER_LABELS || 'ubuntu-latest' }}
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set image tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.head_ref || github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create ECR repositories if not exists
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.APP_ECR_REPO }} --region ${{ env.AWS_REGION }} || \
+          aws ecr create-repository \
+            --repository-name ${{ env.APP_ECR_REPO }} \
+            --region ${{ env.AWS_REGION }} \
+            --image-scanning-configuration scanOnPush=true \
+            --encryption-configuration encryptionType=AES256
+          
+          aws ecr describe-repositories --repository-names ${{ env.NRI_ECR_REPO }} --region ${{ env.AWS_REGION }} || \
+          aws ecr create-repository \
+            --repository-name ${{ env.NRI_ECR_REPO }} \
+            --region ${{ env.AWS_REGION }} \
+            --image-scanning-configuration scanOnPush=true \
+            --encryption-configuration encryptionType=AES256
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get AWS Account ID
+        id: aws-account
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account-id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+          echo "ECR Base: $ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+
+      - name: Build and push demo-app image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.APP_ECR_REPO }}:${{ steps.tag.outputs.tag }}
+            ${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.APP_ECR_REPO }}:latest
+
+      - name: Build and push nri-prometheus image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./nri-prometheus
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.NRI_ECR_REPO }}:${{ steps.tag.outputs.tag }}
+            ${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.NRI_ECR_REPO }}:latest
+
+      - name: Update ECS task definitions
+        run: |
+          ACCOUNT_ID=${{ steps.aws-account.outputs.account-id }}
+          REGION=${{ env.AWS_REGION }}
+          
+          # アプリケーションタスク定義の更新
+          sed -i "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com|g" ecs/app-task-definition.json
+          sed -i "s|YOUR_REGION|${REGION}|g" ecs/app-task-definition.json
+          
+          # nri-prometheusタスク定義の更新
+          sed -i "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com|g" ecs/nri-prometheus-task-definition-simple.json
+          sed -i "s|YOUR_REGION|${REGION}|g" ecs/nri-prometheus-task-definition-simple.json
+          sed -i "s|YOUR_ACCOUNT_ID|${ACCOUNT_ID}|g" ecs/nri-prometheus-task-definition-simple.json
+          
+          # New Relic License KeyをSecrets Managerから取得して設定（オプション）
+          if [ -n "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
+            sed -i "s|YOUR_NEW_RELIC_LICENSE_KEY|${{ secrets.NEW_RELIC_LICENSE_KEY }}|g" ecs/nri-prometheus-task-definition-simple.json
+          fi
+
+      - name: Create CloudWatch Logs groups
+        run: |
+          aws logs create-log-group --log-group-name "/ecs/demo-app" --region ${{ env.AWS_REGION }} || true
+          aws logs create-log-group --log-group-name "/ecs/nri-prometheus" --region ${{ env.AWS_REGION }} || true
+
+      - name: Register ECS task definitions
+        run: |
+          # アプリケーションタスク定義を登録
+          aws ecs register-task-definition \
+            --cli-input-json file://ecs/app-task-definition.json \
+            --region ${{ env.AWS_REGION }}
+          
+          # nri-prometheusタスク定義を登録
+          aws ecs register-task-definition \
+            --cli-input-json file://ecs/nri-prometheus-task-definition-simple.json \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Update ECS services
+        run: |
+          # アプリケーションサービスの更新（存在する場合）
+          if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER_NAME }} --services demo-app-service --region ${{ env.AWS_REGION }} --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "Updating demo-app-service..."
+            aws ecs update-service \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --service demo-app-service \
+              --task-definition demo-app \
+              --force-new-deployment \
+              --region ${{ env.AWS_REGION }}
+          else
+            echo "demo-app-service does not exist. Skipping update."
+          fi
+          
+          # nri-prometheusサービスの更新（存在する場合）
+          if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER_NAME }} --services nri-prometheus-service --region ${{ env.AWS_REGION }} --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "Updating nri-prometheus-service..."
+            aws ecs update-service \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --service nri-prometheus-service \
+              --task-definition nri-prometheus \
+              --force-new-deployment \
+              --region ${{ env.AWS_REGION }}
+          else
+            echo "nri-prometheus-service does not exist. Skipping update."
+          fi
+
+      - name: Output deployment info
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **App Image**: \`${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.APP_ECR_REPO }}:${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **nri-prometheus Image**: \`${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.NRI_ECR_REPO }}:${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **ECS Cluster**: \`${{ env.ECS_CLUSTER_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
+
