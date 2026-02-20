@@ -2,8 +2,8 @@
   "family": "demo-app",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "256",
-  "memory": "512",
+  "cpu": "512",
+  "memory": "1024",
   "executionRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole",
   "containerDefinitions": [
     {
@@ -32,6 +32,31 @@
           "awslogs-group": "/ecs/demo-app",
           "awslogs-region": "YOUR_REGION",
           "awslogs-stream-prefix": "ecs"
+        }
+      }
+    },
+    {
+      "name": "nri-prometheus",
+      "image": "YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/nri-prometheus:latest",
+      "essential": false,
+      "environment": [
+        {
+          "name": "CLUSTER_NAME",
+          "value": "nri-prometheus-ecs-demo"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "NRIA_LICENSE_KEY",
+          "valueFrom": "YOUR_SECRET_ARN"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/demo-app",
+          "awslogs-region": "YOUR_REGION",
+          "awslogs-stream-prefix": "nri-prometheus"
         }
       }
     }

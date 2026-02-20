@@ -39,18 +39,10 @@ sed -i.bak "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ECR_BASE}|g" "
 sed -i.bak "s|YOUR_REGION|${AWS_REGION}|g" "$APP_TASK_DEF"
 sed -i.bak "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" "$APP_TASK_DEF"
 
-# nri-prometheusタスク定義の更新（シンプル版を使用）
-NRI_TASK_DEF="${PROJECT_DIR}/ecs/nri-prometheus-task-definition-simple.json"
-sed -i.bak "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ECR_BASE}|g" "$NRI_TASK_DEF"
-sed -i.bak "s|YOUR_REGION|${AWS_REGION}|g" "$NRI_TASK_DEF"
-sed -i.bak "s|YOUR_ACCOUNT_ID|${AWS_ACCOUNT_ID}|g" "$NRI_TASK_DEF"
-sed -i.bak "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" "$NRI_TASK_DEF"
-sed -i.bak "s|arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:newrelic/ecs-demo-license-key|arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:newrelic/ecs-demo-license-key|g" "$NRI_TASK_DEF"
-
+# 注意: サイドカー構成では、nri-prometheusはアプリケーションタスク定義内に含まれています
+# タスク定義ファイル内のnri-prometheusコンテナのイメージURIを更新
 if [ -n "$NEW_RELIC_LICENSE_KEY" ]; then
-    # 環境変数で直接指定する場合（デモ用）
-    sed -i.bak "s|YOUR_NEW_RELIC_LICENSE_KEY|${NEW_RELIC_LICENSE_KEY}|g" "$NRI_TASK_DEF"
-    echo "New Relic License Key set in task definition"
+    echo "New Relic License Key provided. Please ensure it's set in AWS Secrets Manager or task definition."
 else
     echo "Warning: New Relic License Key not provided. Please update the task definition manually or use AWS Secrets Manager."
 fi
@@ -65,22 +57,15 @@ aws logs create-log-group --log-group-name "/ecs/nri-prometheus" --region "$AWS_
 echo ""
 echo "Registering task definitions..."
 
-# アプリケーションタスク定義
-echo "Registering demo-app task definition..."
+# アプリケーションタスク定義（nri-prometheusはサイドカーとして含まれています）
+echo "Registering demo-app task definition (with nri-prometheus sidecar)..."
 aws ecs register-task-definition \
     --cli-input-json "file://${APP_TASK_DEF}" \
     --region "$AWS_REGION" > /dev/null
 echo "demo-app task definition registered"
 
-# nri-prometheusタスク定義
-echo "Registering nri-prometheus task definition..."
-aws ecs register-task-definition \
-    --cli-input-json "file://${NRI_TASK_DEF}" \
-    --region "$AWS_REGION" > /dev/null
-echo "nri-prometheus task definition registered"
-
 # バックアップファイルの削除
-rm -f "${APP_TASK_DEF}.bak" "${NRI_TASK_DEF}.bak"
+rm -f "${APP_TASK_DEF}.bak"
 
 # サブネットIDとセキュリティグループIDの取得または作成
 echo ""
@@ -182,39 +167,14 @@ else
     echo "demo-app-service created"
 fi
 
-# nri-prometheusサービスの作成または更新
-if aws ecs describe-services \
-    --cluster "$CLUSTER_NAME" \
-    --services nri-prometheus-service \
-    --region "$AWS_REGION" \
-    --query 'services[0].status' \
-    --output text 2>/dev/null | grep -q ACTIVE; then
-    echo "Updating nri-prometheus-service..."
-    aws ecs update-service \
-        --cluster "$CLUSTER_NAME" \
-        --service nri-prometheus-service \
-        --task-definition nri-prometheus \
-        --force-new-deployment \
-        --region "$AWS_REGION" > /dev/null
-    echo "nri-prometheus-service updated"
-else
-    echo "Creating nri-prometheus-service..."
-    aws ecs create-service \
-        --cluster "$CLUSTER_NAME" \
-        --service-name nri-prometheus-service \
-        --task-definition nri-prometheus \
-        --desired-count 1 \
-        --launch-type FARGATE \
-        --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
-        --region "$AWS_REGION" > /dev/null
-    echo "nri-prometheus-service created"
-fi
+# 注意: サイドカー構成では、nri-prometheusは独立したサービスではなく、
+# アプリケーションタスク定義内に含まれています
 
 echo ""
 echo "Deployment completed!"
 echo ""
 echo "Services are starting up. You can check the status with:"
-echo "  aws ecs describe-services --cluster $CLUSTER_NAME --services demo-app-service nri-prometheus-service --region $AWS_REGION"
+echo "  aws ecs describe-services --cluster $CLUSTER_NAME --services demo-app-service --region $AWS_REGION"
 echo ""
 echo "To get the application URL, wait for tasks to start and run:"
 echo "  TASK_ARN=\$(aws ecs list-tasks --cluster $CLUSTER_NAME --service-name demo-app-service --region $AWS_REGION --query 'taskArns[0]' --output text)"
@@ -223,5 +183,6 @@ echo "  PUBLIC_IP=\$(aws ec2 describe-network-interfaces --network-interface-ids
 echo "  echo \"App URL: http://\${PUBLIC_IP}:8080\""
 echo "  echo \"Metrics URL: http://\${PUBLIC_IP}:8080/metrics\""
 echo ""
-echo "Note: Update nri-prometheus/config.yml with the actual app service endpoint and rebuild the image if needed."
+echo "Note: nri-prometheus is running as a sidecar container in the demo-app task."
+echo "      It uses localhost:8080 to scrape metrics from the demo-app container."
 

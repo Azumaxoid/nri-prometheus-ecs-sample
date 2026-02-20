@@ -11,6 +11,11 @@ standalone: true
 # 設定ファイルにフィールドを追加（値は環境変数から読み取られる）
 license_key: ""
 
+# ホスト名（環境変数NRIA_HOSTNAMEから読み取られます）
+# 起動スクリプト（entrypoint.sh）がECSタスクメタデータからタスクIDを取得して
+# 環境変数NRIA_HOSTNAMEに設定します
+# hostname: ""  # 環境変数から自動的に設定されるため、ここでは空のまま
+
 # スクレイピング設定
 scrape_configs:
   # アプリケーション1のメトリクスエンドポイント
@@ -21,8 +26,9 @@ scrape_configs:
       - targets:
           # アプリケーションのメトリクスエンドポイントURL
           # docker-compose環境: "demo-app:8080"
-          # ECS環境: "demo-app-service:8080" または "http://<IP>:8080"
-          - "demo-app:8080"
+          # ECS環境（サイドカー構成）: "localhost:8080"（同じタスク内のコンテナ）
+          # ECS環境（別タスク）: "demo-app-service:8080" または "http://<IP>:8080"
+          - "localhost:8080"
     # メトリクスフィルタリング（デモ用に1メトリクスのみ）
     metric_relabel_configs:
       - source_labels: [__name__]

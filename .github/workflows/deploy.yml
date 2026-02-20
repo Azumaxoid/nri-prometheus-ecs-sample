@@ -208,36 +208,24 @@ jobs:
             echo "Warning: Could not get secret ARN, using fallback: $SECRET_ARN"
           fi
           
-          # アプリケーションタスク定義の更新
+          # アプリケーションタスク定義の更新（nri-prometheusはサイドカーとして含まれています）
           sed -i "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com|g" ecs/app-task-definition.json
           sed -i "s|YOUR_REGION|${REGION}|g" ecs/app-task-definition.json
           sed -i "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" ecs/app-task-definition.json
           
-          # nri-prometheusタスク定義の更新
-          sed -i "s|YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com|${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com|g" ecs/nri-prometheus-task-definition-simple.json
-          sed -i "s|YOUR_REGION|${REGION}|g" ecs/nri-prometheus-task-definition-simple.json
-          sed -i "s|YOUR_ACCOUNT_ID|${ACCOUNT_ID}|g" ecs/nri-prometheus-task-definition-simple.json
-          sed -i "s|arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole|${EXECUTION_ROLE_ARN}|g" ecs/nri-prometheus-task-definition-simple.json
-          
           # Secrets ManagerのARNを更新（サフィックス付きの実際のARNを使用）
-          sed -i "s|YOUR_SECRET_ARN|${SECRET_ARN}|g" ecs/nri-prometheus-task-definition-simple.json
-          sed -i "s|YOUR_SECRET_ARN|${SECRET_ARN}|g" ecs/nri-prometheus-task-definition.json
+          sed -i "s|YOUR_SECRET_ARN|${SECRET_ARN}|g" ecs/app-task-definition.json
 
       - name: Create CloudWatch Logs groups
         run: |
           aws logs create-log-group --log-group-name "/ecs/demo-app" --region ${{ env.AWS_REGION }} || true
-          aws logs create-log-group --log-group-name "/ecs/nri-prometheus" --region ${{ env.AWS_REGION }} || true
+          # サイドカー構成では、nri-prometheusはアプリケーションと同じロググループを使用します
 
       - name: Register ECS task definitions
         run: |
-          # アプリケーションタスク定義を登録
+          # アプリケーションタスク定義を登録（nri-prometheusはサイドカーとして含まれています）
           aws ecs register-task-definition \
             --cli-input-json file://ecs/app-task-definition.json \
-            --region ${{ env.AWS_REGION }}
-          
-          # nri-prometheusタスク定義を登録
-          aws ecs register-task-definition \
-            --cli-input-json file://ecs/nri-prometheus-task-definition-simple.json \
             --region ${{ env.AWS_REGION }}
 
       - name: Get or create network resources
@@ -335,31 +323,8 @@ jobs:
               --region ${{ env.AWS_REGION }}
           fi
           
-          # nri-prometheusサービスの作成または更新
-          if aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER_NAME }} \
-            --services nri-prometheus-service \
-            --region ${{ env.AWS_REGION }} \
-            --query 'services[0].status' \
-            --output text 2>/dev/null | grep -q ACTIVE; then
-            echo "Updating nri-prometheus-service..."
-            aws ecs update-service \
-              --cluster ${{ env.ECS_CLUSTER_NAME }} \
-              --service nri-prometheus-service \
-              --task-definition nri-prometheus \
-              --force-new-deployment \
-              --region ${{ env.AWS_REGION }}
-          else
-            echo "Creating nri-prometheus-service..."
-            aws ecs create-service \
-              --cluster ${{ env.ECS_CLUSTER_NAME }} \
-              --service-name nri-prometheus-service \
-              --task-definition nri-prometheus \
-              --desired-count 1 \
-              --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
-              --region ${{ env.AWS_REGION }}
-          fi
+          # 注意: サイドカー構成では、nri-prometheusは独立したサービスではなく、
+          # アプリケーションタスク定義内に含まれています
 
       - name: Check task status and troubleshoot
         run: |
@@ -414,55 +379,21 @@ jobs:
             fi
           fi
           
+          # サイドカー構成では、nri-prometheusはアプリケーションタスク内に含まれています
           echo ""
-          echo "=== Checking nri-prometheus-service ==="
+          echo "=== Checking nri-prometheus sidecar container ==="
           
-          # nri-prometheusタスクの状態を確認
-          NRI_TASK_ARN=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER_NAME }} \
-            --service-name nri-prometheus-service \
-            --region ${{ env.AWS_REGION }} \
-            --query "taskArns[0]" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$NRI_TASK_ARN" ] && [ "$NRI_TASK_ARN" != "None" ]; then
-            echo "nri-prometheus task ARN: $NRI_TASK_ARN"
-            
-            # タスクの詳細を取得
-            TASK_DETAILS=$(aws ecs describe-tasks \
+          if [ -n "$APP_TASK_ARN" ] && [ "$APP_TASK_ARN" != "None" ]; then
+            # タスク内の全コンテナの状態を確認
+            echo "Checking containers in demo-app task..."
+            aws ecs describe-tasks \
               --cluster ${{ env.ECS_CLUSTER_NAME }} \
-              --tasks "$NRI_TASK_ARN" \
+              --tasks "$APP_TASK_ARN" \
               --region ${{ env.AWS_REGION }} \
-              --query "tasks[0]" \
-              --output json)
-            
-            # タスクの停止理由を確認
-            STOPPED_REASON=$(echo "$TASK_DETAILS" | jq -r '.stoppedReason // "N/A"')
-            LAST_STATUS=$(echo "$TASK_DETAILS" | jq -r '.lastStatus // "N/A"')
-            DESIRED_STATUS=$(echo "$TASK_DETAILS" | jq -r '.desiredStatus // "N/A"')
-            
-            echo "Task Status: $LAST_STATUS (Desired: $DESIRED_STATUS)"
-            if [ "$STOPPED_REASON" != "N/A" ]; then
-              echo "Stopped Reason: $STOPPED_REASON"
-            fi
-            
-            # コンテナの停止理由を確認
-            CONTAINER_REASON=$(echo "$TASK_DETAILS" | jq -r '.containers[0].reason // "N/A"')
-            if [ "$CONTAINER_REASON" != "N/A" ]; then
-              echo "Container Reason: $CONTAINER_REASON"
-            fi
-            
-            # イベントを確認
-            echo ""
-            echo "Service events:"
-            aws ecs describe-services \
-              --cluster ${{ env.ECS_CLUSTER_NAME }} \
-              --services nri-prometheus-service \
-              --region ${{ env.AWS_REGION }} \
-              --query "services[0].events[:5]" \
+              --query "tasks[0].containers[*].[name,lastStatus,healthStatus,reason]" \
               --output table || true
           else
-            echo "No nri-prometheus task found yet"
+            echo "No demo-app task found yet. nri-prometheus will start with the app task."
           fi
           
           # Secrets Managerのシークレットが存在するか確認
@@ -477,11 +408,11 @@ jobs:
             echo "  Please create it or set NEW_RELIC_LICENSE_KEY in GitHub Secrets"
           fi
           
-          # nri-prometheusのログを確認（最後の50行）
+          # nri-prometheusのログを確認（サイドカー構成ではアプリケーションと同じロググループ）
           echo ""
-          echo "=== nri-prometheus CloudWatch Logs (last 50 lines) ==="
+          echo "=== nri-prometheus CloudWatch Logs (last 50 lines, filtered) ==="
           LOG_STREAM=$(aws logs describe-log-streams \
-            --log-group-name "/ecs/nri-prometheus" \
+            --log-group-name "/ecs/demo-app" \
             --region ${{ env.AWS_REGION }} \
             --order-by LastEventTime \
             --descending \
@@ -492,12 +423,12 @@ jobs:
           if [ -n "$LOG_STREAM" ] && [ "$LOG_STREAM" != "None" ]; then
             echo "Log stream: $LOG_STREAM"
             aws logs get-log-events \
-              --log-group-name "/ecs/nri-prometheus" \
+              --log-group-name "/ecs/demo-app" \
               --log-stream-name "$LOG_STREAM" \
               --region ${{ env.AWS_REGION }} \
               --limit 50 \
               --query "events[*].message" \
-              --output text 2>/dev/null || echo "Could not retrieve logs"
+              --output text 2>/dev/null | grep -i "nri-prometheus" || echo "No nri-prometheus logs found yet"
           else
             echo "No log stream found yet"
           fi

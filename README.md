@@ -1,26 +1,27 @@
 # nri-prometheus ECS連携デモ
 
-このプロジェクトは、ECS（Fargate）にデプロイされたGoアプリケーションのPrometheusメトリクスを、nri-prometheus（独立サービス）経由でNew Relicに送信するデモ環境です。
+このプロジェクトは、ECS（Fargate）にデプロイされたGoアプリケーションのPrometheusメトリクスを、nri-prometheus（サイドカー構成）経由でNew Relicに送信するデモ環境です。
 
 ## アーキテクチャ
 
 ```
-Goアプリケーション (ECSサービス、ポート8080)
-  └─ /metrics エンドポイント
-      └─ Prometheus形式のメトリクス出力
-          └─ (ネットワーク経由)
-              └─ nri-prometheus (独立ECSサービス)
-                  └─ スクレイピング (デフォルト30秒間隔)
-                      └─ 複数のアプリケーションエンドポイントを監視可能
-                          └─ New Relic Platform
+ECSタスク (demo-app-service)
+  ├─ demo-appコンテナ (ポート8080)
+  │   └─ /metrics エンドポイント
+  │       └─ Prometheus形式のメトリクス出力
+  │           └─ (localhost経由)
+  │               └─ nri-prometheusコンテナ (サイドカー)
+  │                   └─ スクレイピング (デフォルト30秒間隔)
+  │                       └─ New Relic Platform
 ```
 
 ### 特徴
 
-- **独立サービス方式**: 1つのnri-prometheusサービスで複数のアプリケーションを監視可能
-- **リソース効率**: nri-prometheusのインスタンスが1つで済む
-- **管理性**: 設定変更が1箇所で済む
-- **スケーラビリティ**: アプリケーションタスクの増減に影響されない
+- **サイドカー構成**: アプリケーションコンテナとnri-prometheusコンテナが同じタスク内で実行
+- **ネットワーク設定が簡単**: 同じタスク内なのでlocalhostで通信可能
+- **リソース管理が統一**: アプリケーションとnri-prometheusが同じタスクで管理される
+- **スケーラビリティ**: アプリケーションタスクがスケールするたびに、対応するnri-prometheusも自動的にスケール
+- **タスクIDをホスト名として使用**: 起動時にECSタスクメタデータからタスクIDを取得し、New Relicのメトリクスホスト名として使用します
 
 ## 前提条件
 
@@ -60,7 +61,9 @@ docker-compose down
 - メトリクス: http://localhost:8080/metrics
 - ヘルスチェック: http://localhost:8080/health
 
-**注意**: docker-compose環境では、`nri-prometheus/config.yml`の`targets`が`demo-app:8080`になっています（docker-composeのサービス名を使用）。
+**注意**: 
+- docker-compose環境では、`nri-prometheus/config.yml`の`targets`が`demo-app:8080`になっています（docker-composeのサービス名を使用）
+- ECS環境（サイドカー構成）では、`nri-prometheus/config.yml`の`targets`が`localhost:8080`になっています（同じタスク内のコンテナ）
 
 ### 方法B: GitHub Actionsを使用（推奨・本番デプロイ用）
 
@@ -120,7 +123,7 @@ aws iam attach-role-policy \
 GitHub Actionsはタスク定義を登録しますが、ECSサービスは作成しません。初回のみ、以下のコマンドでサービスを作成してください：
 
 ```bash
-# アプリケーションサービスの作成
+# アプリケーションサービスの作成（nri-prometheusはサイドカーとして含まれています）
 aws ecs create-service \
     --cluster <CLUSTER_NAME> \
     --service-name demo-app-service \
@@ -129,17 +132,9 @@ aws ecs create-service \
     --launch-type FARGATE \
     --network-configuration "awsvpcConfiguration={subnets=[<SUBNET_ID>],securityGroups=[<SECURITY_GROUP_ID>],assignPublicIp=ENABLED}" \
     --region <AWS_REGION>
-
-# nri-prometheusサービスの作成
-aws ecs create-service \
-    --cluster <CLUSTER_NAME> \
-    --service-name nri-prometheus-service \
-    --task-definition nri-prometheus \
-    --desired-count 1 \
-    --launch-type FARGATE \
-    --network-configuration "awsvpcConfiguration={subnets=[<SUBNET_ID>],securityGroups=[<SECURITY_GROUP_ID>],assignPublicIp=ENABLED}" \
-    --region <AWS_REGION>
 ```
+
+**注意**: サイドカー構成では、nri-prometheusは独立したサービスではなく、アプリケーションタスク定義内に含まれています。
 
 ### 方法B: ローカルからデプロイ
 
@@ -186,13 +181,14 @@ aws secretsmanager create-secret \
 
 `nri-prometheus/config.yml`を編集して、アプリケーションのメトリクスエンドポイントURLを設定します。
 
+サイドカー構成では、同じタスク内のコンテナなので`localhost:8080`を使用します：
+
 ```yaml
 scrape_configs:
   - job_name: "demo-app"
     static_configs:
       - targets:
-          # アプリケーションの実際のエンドポイントに変更
-          - "demo-app-service:8080"  # または ALB/NLB のエンドポイント
+          - "localhost:8080"  # サイドカー構成では同じタスク内のコンテナ
 ```
 
 設定を変更した場合は、nri-prometheusイメージを再ビルド・再プッシュしてください。
@@ -215,7 +211,7 @@ scrape_configs:
 
 ### 6. ECSサービスの作成
 
-#### アプリケーションサービスの作成
+#### アプリケーションサービスの作成（nri-prometheusはサイドカーとして含まれています）
 
 ```bash
 aws ecs create-service \
@@ -228,38 +224,7 @@ aws ecs create-service \
     --region <AWS_REGION>
 ```
 
-#### nri-prometheusサービスの作成
-
-```bash
-aws ecs create-service \
-    --cluster <CLUSTER_NAME> \
-    --service-name nri-prometheus-service \
-    --task-definition nri-prometheus \
-    --desired-count 1 \
-    --launch-type FARGATE \
-    --network-configuration "awsvpcConfiguration={subnets=[<SUBNET_ID>],securityGroups=[<SECURITY_GROUP_ID>],assignPublicIp=ENABLED}" \
-    --region <AWS_REGION>
-```
-
-**重要**: nri-prometheusのセキュリティグループで、アプリケーションサービスのポート8080へのアクセスを許可してください。
-
-### 7. アプリケーションエンドポイントの確認
-
-アプリケーションサービスが起動したら、タスクのプライベートIPアドレスまたはALBエンドポイントを確認し、`nri-prometheus/config.yml`の`targets`を更新します。
-
-設定を更新したら、nri-prometheusイメージを再ビルド・再プッシュし、サービスを更新してください：
-
-```bash
-# イメージの再ビルド・プッシュ
-./scripts/build-and-push.sh <AWS_REGION> <AWS_ACCOUNT_ID>
-
-# サービスの強制新規デプロイ
-aws ecs update-service \
-    --cluster <CLUSTER_NAME> \
-    --service nri-prometheus-service \
-    --force-new-deployment \
-    --region <AWS_REGION>
-```
+**注意**: サイドカー構成では、nri-prometheusは独立したサービスではなく、アプリケーションタスク定義内に含まれています。同じタスク内のコンテナなので、ネットワーク設定は不要です。
 
 ## 動作確認
 
@@ -281,10 +246,10 @@ http_requests_total{endpoint="/",method="GET"} 1
 
 ### 2. CloudWatch Logsの確認
 
-nri-prometheusサービスのログを確認：
+nri-prometheusコンテナのログを確認（サイドカー構成ではアプリケーションと同じロググループを使用）：
 
 ```bash
-aws logs tail /ecs/nri-prometheus --follow --region <AWS_REGION>
+aws logs tail /ecs/demo-app --follow --region <AWS_REGION> --filter-pattern "nri-prometheus"
 ```
 
 スクレイピングが成功している場合、以下のようなログが表示されます。
@@ -299,7 +264,7 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
 
 ## トラブルシューティング
 
-### nri-prometheusタスクがPendingのまま起動しない
+### アプリケーションタスクがPendingのまま起動しない（サイドカー構成）
 
 1. **Secrets Managerのシークレットを確認**
    ```bash
@@ -322,7 +287,7 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
    ```bash
    TASK_ARN=$(aws ecs list-tasks \
        --cluster <CLUSTER_NAME> \
-       --service-name nri-prometheus-service \
+       --service-name demo-app-service \
        --region <AWS_REGION> \
        --query "taskArns[0]" \
        --output text)
@@ -331,7 +296,7 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
        --cluster <CLUSTER_NAME> \
        --tasks $TASK_ARN \
        --region <AWS_REGION> \
-       --query "tasks[0].[lastStatus,stoppedReason,containers[0].reason]" \
+       --query "tasks[0].[lastStatus,stoppedReason,containers[*].[name,reason]]" \
        --output table
    ```
 
@@ -339,7 +304,7 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
    ```bash
    aws ecs describe-services \
        --cluster <CLUSTER_NAME> \
-       --services nri-prometheus-service \
+       --services demo-app-service \
        --region <AWS_REGION> \
        --query "services[0].events[:10]" \
        --output table
@@ -347,22 +312,26 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
 
 5. **CloudWatch Logsを確認**（タスクが起動している場合）
    ```bash
-   aws logs tail /ecs/nri-prometheus --follow --region <AWS_REGION>
+   aws logs tail /ecs/demo-app --follow --region <AWS_REGION>
    ```
 
 ### メトリクスがNew Relicに表示されない
 
-1. **nri-prometheusのログを確認**
+1. **nri-prometheusコンテナのログを確認**
    ```bash
-   aws logs tail /ecs/nri-prometheus --follow --region <AWS_REGION>
+   aws logs tail /ecs/demo-app --follow --region <AWS_REGION> --filter-pattern "nri-prometheus"
    ```
 
 2. **設定ファイルの確認**
-   - `nri-prometheus/config.yml`の`targets`が正しいエンドポイントを指しているか
+   - `nri-prometheus/config.yml`の`targets`が`localhost:8080`になっているか（サイドカー構成）
    - アプリケーションの`/metrics`エンドポイントにアクセスできるか
 
-3. **セキュリティグループの確認**
-   - nri-prometheusタスクからアプリケーションタスクのポート8080へのアクセスが許可されているか
+3. **コンテナの状態を確認**
+   ```bash
+   TASK_ARN=$(aws ecs list-tasks --cluster <CLUSTER_NAME> --service-name demo-app-service --region <AWS_REGION> --query "taskArns[0]" --output text)
+   aws ecs describe-tasks --cluster <CLUSTER_NAME> --tasks $TASK_ARN --region <AWS_REGION> --query "tasks[0].containers[*].[name,lastStatus,healthStatus]" --output table
+   ```
+   nri-prometheusコンテナが`RUNNING`状態になっているか確認してください。
 
 4. **New Relic License Keyの確認**
    - License Keyが正しく設定されているか
@@ -417,18 +386,20 @@ scrape_interval: 60s  # 60秒に変更（コスト削減）
 
 ### 複数のアプリケーションを監視
 
-`nri-prometheus/config.yml`に複数の`scrape_configs`を追加：
+サイドカー構成では、各アプリケーションタスクにnri-prometheusが含まれます。複数のアプリケーションを監視する場合は、各アプリケーションのタスク定義にnri-prometheusコンテナを追加し、それぞれの`config.yml`で`localhost:8080`を監視するように設定してください。
+
+別のアプリケーションサービスを監視する場合は、ネットワーク経由でアクセスする設定も可能です：
 
 ```yaml
 scrape_configs:
-  - job_name: "demo-app-1"
+  - job_name: "demo-app"
     static_configs:
       - targets:
-          - "app-1-service:8080"
-  - job_name: "demo-app-2"
+          - "localhost:8080"  # 同じタスク内のアプリケーション
+  - job_name: "other-app"
     static_configs:
       - targets:
-          - "app-2-service:8080"
+          - "other-app-service:8080"  # 別のサービスのエンドポイント
 ```
 
 ### メトリクスのフィルタリング
@@ -441,6 +412,15 @@ metric_relabel_configs:
     regex: "http_requests_total|http_request_duration_seconds"
     action: keep  # これらのメトリクスのみ保持
 ```
+
+### ホスト名の設定
+
+nri-prometheusは、起動時にECSタスクメタデータエンドポイントからタスクIDを取得し、環境変数`NRIA_HOSTNAME`に設定します。これにより、New Relicに送信されるメトリクスのホスト名がタスクIDになります。
+
+- **ECS環境**: タスクIDが自動的にホスト名として使用されます
+- **ローカル環境（docker-compose）**: `local-<hostname>`がフォールバックとして使用されます
+
+ホスト名を手動で設定する場合は、タスク定義のnri-prometheusコンテナに環境変数`NRIA_HOSTNAME`を設定してください。
 
 ## ライセンス
 
