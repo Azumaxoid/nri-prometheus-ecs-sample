@@ -174,17 +174,6 @@ jobs:
             ${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.APP_ECR_REPO }}:${{ steps.tag.outputs.tag }}
             ${{ steps.aws-account.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.APP_ECR_REPO }}:latest
 
-      - name: Update NRDOT config with license key
-        run: |
-          if [ -n "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
-            # NRDOTは環境変数NRIA_LICENSE_KEYを使用するため、設定ファイルの更新は不要
-            # ただし、設定ファイル内のapi-keyプレースホルダーを更新（オプション）
-            sed -i "s|api-key: \${NRIA_LICENSE_KEY}|api-key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}|g" nri-prometheus/config.yml || true
-            echo "License key will be provided via environment variable NRIA_LICENSE_KEY"
-          else
-            echo "NEW_RELIC_LICENSE_KEY not set, will use environment variable from task definition"
-          fi
-
       - name: Build and push NRDOT image
         uses: docker/build-push-action@v5
         with:

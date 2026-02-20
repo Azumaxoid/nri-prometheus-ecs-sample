@@ -1,4 +1,4 @@
-FROM newrelic/nrdot:latest
+FROM newrelic/nrdot-collector:latest
 
 # 設定ファイルをコピー
 # NRDOT (OpenTelemetry Collector) は /etc/otelcol/config.yaml を確認します

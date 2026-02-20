@@ -39,6 +39,7 @@
       "name": "nrdot",
       "image": "YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/nri-prometheus:latest",
       "essential": false,
+      "command": ["--config", "/etc/otelcol/config.yaml"],
       "environment": [
         {
           "name": "CLUSTER_NAME",

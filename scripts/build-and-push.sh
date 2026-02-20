@@ -42,9 +42,9 @@ echo "Pushing demo-app image..."
 docker push "${ECR_BASE}/demo-app:latest"
 echo "demo-app image pushed successfully"
 
-# NRDOTカスタムイメージのビルドとプッシュ
+# NRDOTカスタムイメージのビルドとプッシュ（設定ファイルを含む）
 echo ""
-echo "Building NRDOT custom image (linux/amd64)..."
+echo "Building NRDOT custom image with config (linux/amd64)..."
 cd "$(dirname "$0")/../nri-prometheus"
 
 # buildxを使用してマルチプラットフォームビルド（より安定）
@@ -66,5 +66,5 @@ echo "All images built and pushed successfully!"
 echo ""
 echo "Image URIs:"
 echo "  - ${ECR_BASE}/demo-app:latest"
-echo "  - ${ECR_BASE}/nri-prometheus:latest (NRDOT)"
+echo "  - ${ECR_BASE}/nri-prometheus:latest (NRDOT with config)"
 
