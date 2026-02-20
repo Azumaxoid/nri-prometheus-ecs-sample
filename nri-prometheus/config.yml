@@ -16,6 +16,12 @@ license_key: ""
 # 環境変数NRIA_HOSTNAMEに設定します
 # hostname: ""  # 環境変数から自動的に設定されるため、ここでは空のまま
 
+# HTTPサーバーのリスニング設定（サイドカー構成では不要）
+# アプリケーションコンテナがポート8080を使用するため、nri-prometheusのHTTPサーバーは無効化
+# 注意: nri-prometheusはメトリクスをスクレイプする側なので、自分自身がHTTPサーバーを起動する必要はありません
+server:
+  enabled: false
+
 # スクレイピング設定
 scrape_configs:
   # アプリケーション1のメトリクスエンドポイント
