@@ -84,6 +84,54 @@ jobs:
             echo "ECS cluster created"
           fi
 
+      - name: Ensure task execution role has Secrets Manager access
+        run: |
+          ROLE_NAME="${{ env.ECS_TASK_EXECUTION_ROLE }}"
+          ACCOUNT_ID=${{ steps.aws-account.outputs.account-id }}
+          REGION=${{ env.AWS_REGION }}
+          
+          echo "Checking task execution role: $ROLE_NAME"
+          
+          # Secrets Managerへのアクセス権限を確認
+          HAS_SECRETS_ACCESS=$(aws iam list-attached-role-policies \
+            --role-name "$ROLE_NAME" \
+            --query "AttachedPolicies[?PolicyArn=='arn:aws:iam::aws:policy/SecretsManagerReadWrite'].PolicyArn" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$HAS_SECRETS_ACCESS" ] || [ "$HAS_SECRETS_ACCESS" == "None" ]; then
+            echo "Adding Secrets Manager access to task execution role..."
+            # Secrets Managerへの読み取り権限を付与
+            aws iam attach-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite
+            echo "✓ SecretsManagerReadWrite policy attached"
+          else
+            echo "✓ Task execution role already has Secrets Manager access"
+          fi
+          
+          # カスタムポリシーで特定のシークレットへのアクセスのみを許可する場合（オプション）
+          # より制限されたアクセスが必要な場合は、以下のコメントを外して使用
+          # POLICY_NAME="ecs-task-execution-secrets-access"
+          # POLICY_DOCUMENT=$(cat <<EOF
+          # {
+          #   "Version": "2012-10-17",
+          #   "Statement": [
+          #     {
+          #       "Effect": "Allow",
+          #       "Action": [
+          #         "secretsmanager:GetSecretValue"
+          #       ],
+          #       "Resource": "arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:newrelic/ecs-demo-license-key*"
+          #     }
+          #   ]
+          # }
+          # EOF
+          # )
+          # aws iam put-role-policy \
+          #   --role-name "$ROLE_NAME" \
+          #   --policy-name "$POLICY_NAME" \
+          #   --policy-document "$POLICY_DOCUMENT"
+
       - name: Create or update Secrets Manager secret
         run: |
           if [ -z "${{ secrets.NEW_RELIC_LICENSE_KEY }}" ]; then
@@ -282,6 +330,71 @@ jobs:
               --launch-type FARGATE \
               --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
               --region ${{ env.AWS_REGION }}
+          fi
+
+      - name: Check task status and troubleshoot
+        run: |
+          echo "Checking task status..."
+          sleep 10
+          
+          # nri-prometheusタスクの状態を確認
+          NRI_TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --service-name nri-prometheus-service \
+            --region ${{ env.AWS_REGION }} \
+            --query "taskArns[0]" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$NRI_TASK_ARN" ] && [ "$NRI_TASK_ARN" != "None" ]; then
+            echo "nri-prometheus task ARN: $NRI_TASK_ARN"
+            
+            # タスクの詳細を取得
+            TASK_DETAILS=$(aws ecs describe-tasks \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --tasks "$NRI_TASK_ARN" \
+              --region ${{ env.AWS_REGION }} \
+              --query "tasks[0]" \
+              --output json)
+            
+            # タスクの停止理由を確認
+            STOPPED_REASON=$(echo "$TASK_DETAILS" | jq -r '.stoppedReason // "N/A"')
+            LAST_STATUS=$(echo "$TASK_DETAILS" | jq -r '.lastStatus // "N/A"')
+            DESIRED_STATUS=$(echo "$TASK_DETAILS" | jq -r '.desiredStatus // "N/A"')
+            
+            echo "Task Status: $LAST_STATUS (Desired: $DESIRED_STATUS)"
+            if [ "$STOPPED_REASON" != "N/A" ]; then
+              echo "Stopped Reason: $STOPPED_REASON"
+            fi
+            
+            # コンテナの停止理由を確認
+            CONTAINER_REASON=$(echo "$TASK_DETAILS" | jq -r '.containers[0].reason // "N/A"')
+            if [ "$CONTAINER_REASON" != "N/A" ]; then
+              echo "Container Reason: $CONTAINER_REASON"
+            fi
+            
+            # イベントを確認
+            echo ""
+            echo "Service events:"
+            aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --services nri-prometheus-service \
+              --region ${{ env.AWS_REGION }} \
+              --query "services[0].events[:5]" \
+              --output table || true
+          else
+            echo "No nri-prometheus task found yet"
+          fi
+          
+          # Secrets Managerのシークレットが存在するか確認
+          echo ""
+          echo "Checking Secrets Manager secret..."
+          if aws secretsmanager describe-secret \
+            --secret-id "newrelic/ecs-demo-license-key" \
+            --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "✓ Secrets Manager secret exists"
+          else
+            echo "✗ Secrets Manager secret 'newrelic/ecs-demo-license-key' does not exist"
+            echo "  Please create it or set NEW_RELIC_LICENSE_KEY in GitHub Secrets"
           fi
 
       - name: Get application access info

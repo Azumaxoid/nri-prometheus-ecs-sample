@@ -270,6 +270,57 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
 
 ## トラブルシューティング
 
+### nri-prometheusタスクがPendingのまま起動しない
+
+1. **Secrets Managerのシークレットを確認**
+   ```bash
+   aws secretsmanager describe-secret \
+       --secret-id "newrelic/ecs-demo-license-key" \
+       --region <AWS_REGION>
+   ```
+   シークレットが存在しない場合は作成してください。
+
+2. **タスク実行ロールにSecrets Managerへのアクセス権限があるか確認**
+   ```bash
+   # タスク実行ロールにSecrets Managerへのアクセス権限を付与
+   aws iam attach-role-policy \
+       --role-name ecsTaskExecutionRole \
+       --policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite
+   ```
+   または、より制限されたポリシーを作成して、特定のシークレットへのアクセスのみを許可することもできます。
+
+3. **タスクの停止理由を確認**
+   ```bash
+   TASK_ARN=$(aws ecs list-tasks \
+       --cluster <CLUSTER_NAME> \
+       --service-name nri-prometheus-service \
+       --region <AWS_REGION> \
+       --query "taskArns[0]" \
+       --output text)
+   
+   aws ecs describe-tasks \
+       --cluster <CLUSTER_NAME> \
+       --tasks $TASK_ARN \
+       --region <AWS_REGION> \
+       --query "tasks[0].[lastStatus,stoppedReason,containers[0].reason]" \
+       --output table
+   ```
+
+4. **サービスのイベントを確認**
+   ```bash
+   aws ecs describe-services \
+       --cluster <CLUSTER_NAME> \
+       --services nri-prometheus-service \
+       --region <AWS_REGION> \
+       --query "services[0].events[:10]" \
+       --output table
+   ```
+
+5. **CloudWatch Logsを確認**（タスクが起動している場合）
+   ```bash
+   aws logs tail /ecs/nri-prometheus --follow --region <AWS_REGION>
+   ```
+
 ### メトリクスがNew Relicに表示されない
 
 1. **nri-prometheusのログを確認**
