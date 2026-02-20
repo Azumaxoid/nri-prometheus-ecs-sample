@@ -447,6 +447,31 @@ jobs:
             echo "✗ Secrets Manager secret 'newrelic/ecs-demo-license-key' does not exist"
             echo "  Please create it or set NEW_RELIC_LICENSE_KEY in GitHub Secrets"
           fi
+          
+          # nri-prometheusのログを確認（最後の50行）
+          echo ""
+          echo "=== nri-prometheus CloudWatch Logs (last 50 lines) ==="
+          LOG_STREAM=$(aws logs describe-log-streams \
+            --log-group-name "/ecs/nri-prometheus" \
+            --region ${{ env.AWS_REGION }} \
+            --order-by LastEventTime \
+            --descending \
+            --max-items 1 \
+            --query "logStreams[0].logStreamName" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$LOG_STREAM" ] && [ "$LOG_STREAM" != "None" ]; then
+            echo "Log stream: $LOG_STREAM"
+            aws logs get-log-events \
+              --log-group-name "/ecs/nri-prometheus" \
+              --log-stream-name "$LOG_STREAM" \
+              --region ${{ env.AWS_REGION }} \
+              --limit 50 \
+              --query "events[*].message" \
+              --output text 2>/dev/null || echo "Could not retrieve logs"
+          else
+            echo "No log stream found yet"
+          fi
 
       - name: Get application access info
         id: app-info
