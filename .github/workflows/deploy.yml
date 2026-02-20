@@ -150,10 +150,82 @@ jobs:
             --cli-input-json file://ecs/nri-prometheus-task-definition-simple.json \
             --region ${{ env.AWS_REGION }}
 
-      - name: Update ECS services
+      - name: Get or create network resources
+        id: network
         run: |
-          # アプリケーションサービスの更新（存在する場合）
-          if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER_NAME }} --services demo-app-service --region ${{ env.AWS_REGION }} --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+          # サブネットIDを取得（デフォルトサブネットまたは最初のサブネット）
+          SUBNET_ID=$(aws ec2 describe-subnets \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=default-for-az,Values=true" \
+            --query "Subnets[0].SubnetId" \
+            --output text 2>/dev/null || \
+          aws ec2 describe-subnets \
+            --region ${{ env.AWS_REGION }} \
+            --query "Subnets[0].SubnetId" \
+            --output text)
+          
+          if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" == "None" ]; then
+            echo "Error: Could not find a subnet"
+            exit 1
+          fi
+          echo "subnet-id=$SUBNET_ID" >> $GITHUB_OUTPUT
+          echo "Using subnet: $SUBNET_ID"
+          
+          # VPC IDを取得
+          VPC_ID=$(aws ec2 describe-subnets \
+            --subnet-ids "$SUBNET_ID" \
+            --region ${{ env.AWS_REGION }} \
+            --query "Subnets[0].VpcId" \
+            --output text)
+          
+          # セキュリティグループを作成または取得
+          SG_NAME="ecs-demo-${{ env.ECS_CLUSTER_NAME }}-sg"
+          SG_ID=$(aws ec2 create-security-group \
+            --group-name "$SG_NAME" \
+            --description "Security group for ECS demo cluster ${{ env.ECS_CLUSTER_NAME }}" \
+            --vpc-id "$VPC_ID" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'GroupId' \
+            --output text 2>/dev/null || \
+          aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=$SG_NAME" "Name=vpc-id,Values=$VPC_ID" \
+            --region ${{ env.AWS_REGION }} \
+            --query "SecurityGroups[0].GroupId" \
+            --output text)
+          
+          if [ -z "$SG_ID" ] || [ "$SG_ID" == "None" ]; then
+            echo "Error: Could not create or find security group"
+            exit 1
+          fi
+          echo "security-group-id=$SG_ID" >> $GITHUB_OUTPUT
+          echo "Using security group: $SG_ID"
+          
+          # セキュリティグループにルールを追加
+          aws ec2 authorize-security-group-ingress \
+            --group-id "$SG_ID" \
+            --protocol tcp \
+            --port 8080 \
+            --cidr 0.0.0.0/0 \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "Port 8080 rule may already exist"
+          
+          aws ec2 authorize-security-group-egress \
+            --group-id "$SG_ID" \
+            --protocol -1 \
+            --cidr 0.0.0.0/0 \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "Egress rule may already exist"
+
+      - name: Create or update ECS services
+        run: |
+          SUBNET_ID="${{ steps.network.outputs.subnet-id }}"
+          SG_ID="${{ steps.network.outputs.security-group-id }}"
+          
+          # アプリケーションサービスの作成または更新
+          if aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --services demo-app-service \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[0].status' \
+            --output text 2>/dev/null | grep -q ACTIVE; then
             echo "Updating demo-app-service..."
             aws ecs update-service \
               --cluster ${{ env.ECS_CLUSTER_NAME }} \
@@ -162,11 +234,24 @@ jobs:
               --force-new-deployment \
               --region ${{ env.AWS_REGION }}
           else
-            echo "demo-app-service does not exist. Skipping update."
+            echo "Creating demo-app-service..."
+            aws ecs create-service \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --service-name demo-app-service \
+              --task-definition demo-app \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
+              --region ${{ env.AWS_REGION }}
           fi
           
-          # nri-prometheusサービスの更新（存在する場合）
-          if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER_NAME }} --services nri-prometheus-service --region ${{ env.AWS_REGION }} --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+          # nri-prometheusサービスの作成または更新
+          if aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --services nri-prometheus-service \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[0].status' \
+            --output text 2>/dev/null | grep -q ACTIVE; then
             echo "Updating nri-prometheus-service..."
             aws ecs update-service \
               --cluster ${{ env.ECS_CLUSTER_NAME }} \
@@ -175,7 +260,15 @@ jobs:
               --force-new-deployment \
               --region ${{ env.AWS_REGION }}
           else
-            echo "nri-prometheus-service does not exist. Skipping update."
+            echo "Creating nri-prometheus-service..."
+            aws ecs create-service \
+              --cluster ${{ env.ECS_CLUSTER_NAME }} \
+              --service-name nri-prometheus-service \
+              --task-definition nri-prometheus \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
+              --region ${{ env.AWS_REGION }}
           fi
 
       - name: Output deployment info
