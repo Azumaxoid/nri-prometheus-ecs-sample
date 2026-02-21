@@ -25,18 +25,15 @@ processors:
   batch:
     timeout: 10s
     send_batch_size: 1024
-  # リソース属性の追加
-  # host.name: タスクID（entrypointで TASK_ID を設定。未設定時は "unknown"）
+  # ECS上で aws.ecs.task.id / aws.ecs.task.arn 等を自動付与（タスク単位の切り分けに利用）
+  resourcedetection:
+    detectors: [env, ecs]
+    timeout: 5s
+    override: false
   resource:
     attributes:
       - key: service.name
         value: demo-app
-        action: upsert
-      - key: host.name
-        value: ${TASK_ID:-unknown}
-        action: upsert
-      - key: service.instance.id
-        value: ${TASK_ID:-unknown}
         action: upsert
 
 exporters:
@@ -51,6 +48,6 @@ service:
   pipelines:
     metrics:
       receivers: [prometheus]
-      processors: [batch, resource]
+      processors: [batch, resourcedetection, resource]
       exporters: [otlp/newrelic]
 
