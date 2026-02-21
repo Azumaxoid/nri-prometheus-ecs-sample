@@ -1,6 +1,6 @@
-# nri-prometheus ECS連携デモ
+# nrdot ECS連携デモ
 
-このプロジェクトは、ECS（Fargate）にデプロイされたGoアプリケーションのPrometheusメトリクスを、nri-prometheus（サイドカー構成）経由でNew Relicに送信するデモ環境です。
+このプロジェクトは、ECS（Fargate）にデプロイされたGoアプリケーションのPrometheusメトリクスを、nrdot（サイドカー構成）経由でNew Relicに送信するデモ環境です。
 
 ## アーキテクチャ
 
@@ -10,17 +10,17 @@ ECSタスク (demo-app-service)
   │   └─ /metrics エンドポイント
   │       └─ Prometheus形式のメトリクス出力
   │           └─ (localhost経由)
-  │               └─ nri-prometheusコンテナ (サイドカー)
+  │               └─ nrdotコンテナ (サイドカー)
   │                   └─ スクレイピング (デフォルト30秒間隔)
   │                       └─ New Relic Platform
 ```
 
 ### 特徴
 
-- **サイドカー構成**: アプリケーションコンテナとnri-prometheusコンテナが同じタスク内で実行
+- **サイドカー構成**: アプリケーションコンテナとnrdotコンテナが同じタスク内で実行
 - **ネットワーク設定が簡単**: 同じタスク内なのでlocalhostで通信可能
-- **リソース管理が統一**: アプリケーションとnri-prometheusが同じタスクで管理される
-- **スケーラビリティ**: アプリケーションタスクがスケールするたびに、対応するnri-prometheusも自動的にスケール
+- **リソース管理が統一**: アプリケーションとnrdotが同じタスクで管理される
+- **スケーラビリティ**: アプリケーションタスクがスケールするたびに、対応するnrdotも自動的にスケール
 - **タスクIDをホスト名として使用**: 起動時にECSタスクメタデータからタスクIDを取得し、New Relicのメトリクスホスト名として使用します
 
 ## 前提条件
@@ -62,8 +62,8 @@ docker-compose down
 - ヘルスチェック: http://localhost:8080/health
 
 **注意**: 
-- docker-compose環境では、`nri-prometheus/config.yml`の`targets`が`demo-app:8080`になっています（docker-composeのサービス名を使用）
-- ECS環境（サイドカー構成）では、`nri-prometheus/config.yml`の`targets`が`localhost:8080`になっています（同じタスク内のコンテナ）
+- docker-compose環境では、`nrdot/config.yml`の`targets`が`demo-app:8080`になっています（docker-composeのサービス名を使用）
+- ECS環境（サイドカー構成）では、`nrdot/config.yml`の`targets`が`localhost:8080`になっています（同じタスク内のコンテナ）
 
 ### 方法B: GitHub Actionsを使用（推奨・本番デプロイ用）
 
@@ -123,7 +123,7 @@ aws iam attach-role-policy \
 GitHub Actionsはタスク定義を登録しますが、ECSサービスは作成しません。初回のみ、以下のコマンドでサービスを作成してください：
 
 ```bash
-# アプリケーションサービスの作成（nri-prometheusはサイドカーとして含まれています）
+# アプリケーションサービスの作成（nrdotはサイドカーとして含まれています）
 aws ecs create-service \
     --cluster <CLUSTER_NAME> \
     --service-name demo-app-service \
@@ -134,7 +134,7 @@ aws ecs create-service \
     --region <AWS_REGION>
 ```
 
-**注意**: サイドカー構成では、nri-prometheusは独立したサービスではなく、アプリケーションタスク定義内に含まれています。
+**注意**: サイドカー構成では、nrdotは独立したサービスではなく、アプリケーションタスク定義内に含まれています。
 
 ### 方法B: ローカルからデプロイ
 
@@ -177,9 +177,9 @@ aws secretsmanager create-secret \
 ./scripts/build-and-push.sh us-east-1 123456789012
 ```
 
-### 4. nri-prometheus設定ファイルの更新
+### 4. nrdot設定ファイルの更新
 
-`nri-prometheus/config.yml`を編集して、アプリケーションのメトリクスエンドポイントURLを設定します。
+`nrdot/config.yml`を編集して、アプリケーションのメトリクスエンドポイントURLを設定します。
 
 サイドカー構成では、同じタスク内のコンテナなので`localhost:8080`を使用します：
 
@@ -191,7 +191,7 @@ scrape_configs:
           - "localhost:8080"  # サイドカー構成では同じタスク内のコンテナ
 ```
 
-設定を変更した場合は、nri-prometheusイメージを再ビルド・再プッシュしてください。
+設定を変更した場合は、nrdotイメージを再ビルド・再プッシュしてください。
 
 ### 5. ECSタスク定義の登録とデプロイ
 
@@ -211,7 +211,7 @@ scrape_configs:
 
 ### 6. ECSサービスの作成
 
-#### アプリケーションサービスの作成（nri-prometheusはサイドカーとして含まれています）
+#### アプリケーションサービスの作成（nrdotはサイドカーとして含まれています）
 
 ```bash
 aws ecs create-service \
@@ -224,7 +224,7 @@ aws ecs create-service \
     --region <AWS_REGION>
 ```
 
-**注意**: サイドカー構成では、nri-prometheusは独立したサービスではなく、アプリケーションタスク定義内に含まれています。同じタスク内のコンテナなので、ネットワーク設定は不要です。
+**注意**: サイドカー構成では、nrdotは独立したサービスではなく、アプリケーションタスク定義内に含まれています。同じタスク内のコンテナなので、ネットワーク設定は不要です。
 
 ## 動作確認
 
@@ -246,10 +246,10 @@ http_requests_total{endpoint="/",method="GET"} 1
 
 ### 2. CloudWatch Logsの確認
 
-nri-prometheusコンテナのログを確認（サイドカー構成ではアプリケーションと同じロググループを使用）：
+nrdotコンテナのログを確認（サイドカー構成ではアプリケーションと同じロググループを使用）：
 
 ```bash
-aws logs tail /ecs/demo-app --follow --region <AWS_REGION> --filter-pattern "nri-prometheus"
+aws logs tail /ecs/demo-app --follow --region <AWS_REGION> --filter-pattern "nrdot"
 ```
 
 スクレイピングが成功している場合、以下のようなログが表示されます。
@@ -317,13 +317,13 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
 
 ### メトリクスがNew Relicに表示されない
 
-1. **nri-prometheusコンテナのログを確認**
+1. **nrdotコンテナのログを確認**
    ```bash
-   aws logs tail /ecs/demo-app --follow --region <AWS_REGION> --filter-pattern "nri-prometheus"
+   aws logs tail /ecs/demo-app --follow --region <AWS_REGION> --filter-pattern "nrdot"
    ```
 
 2. **設定ファイルの確認**
-   - `nri-prometheus/config.yml`の`targets`が`localhost:8080`になっているか（サイドカー構成）
+   - `nrdot/config.yml`の`targets`が`localhost:8080`になっているか（サイドカー構成）
    - アプリケーションの`/metrics`エンドポイントにアクセスできるか
 
 3. **コンテナの状態を確認**
@@ -331,7 +331,7 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
    TASK_ARN=$(aws ecs list-tasks --cluster <CLUSTER_NAME> --service-name demo-app-service --region <AWS_REGION> --query "taskArns[0]" --output text)
    aws ecs describe-tasks --cluster <CLUSTER_NAME> --tasks $TASK_ARN --region <AWS_REGION> --query "tasks[0].containers[*].[name,lastStatus,healthStatus]" --output table
    ```
-   nri-prometheusコンテナが`RUNNING`状態になっているか確認してください。
+   nrdotコンテナが`RUNNING`状態になっているか確認してください。
 
 4. **New Relic License Keyの確認**
    - License Keyが正しく設定されているか
@@ -360,13 +360,13 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
 │   ├── main.go              # Goアプリケーション
 │   ├── go.mod               # Go依存関係
 │   └── Dockerfile           # アプリケーション用Dockerfile
-├── nri-prometheus/
-│   ├── config.yml           # nri-prometheus設定ファイル
-│   └── Dockerfile           # nri-prometheusカスタムイメージ用Dockerfile
+├── nrdot/
+│   ├── config.yml           # nrdot設定ファイル
+│   └── Dockerfile           # nrdotカスタムイメージ用Dockerfile
 ├── ecs/
 │   ├── app-task-definition.json                    # アプリケーション用タスク定義
-│   ├── nri-prometheus-task-definition.json         # nri-prometheus用タスク定義（EFS使用）
-│   └── nri-prometheus-task-definition-simple.json  # nri-prometheus用タスク定義（シンプル版）
+│   ├── nri-prometheus-task-definition.json         # nrdot用タスク定義（EFS使用）
+│   └── nri-prometheus-task-definition-simple.json  # nrdot用タスク定義（シンプル版）
 ├── scripts/
 │   ├── setup-ecr.sh         # ECRリポジトリ作成スクリプト
 │   ├── build-and-push.sh    # イメージビルド・プッシュスクリプト
@@ -378,7 +378,7 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
 
 ### スクレイピング間隔の変更
 
-`nri-prometheus/config.yml`の`scrape_interval`を変更：
+`nrdot/config.yml`の`scrape_interval`を変更：
 
 ```yaml
 scrape_interval: 60s  # 60秒に変更（コスト削減）
@@ -386,7 +386,7 @@ scrape_interval: 60s  # 60秒に変更（コスト削減）
 
 ### 複数のアプリケーションを監視
 
-サイドカー構成では、各アプリケーションタスクにnri-prometheusが含まれます。複数のアプリケーションを監視する場合は、各アプリケーションのタスク定義にnri-prometheusコンテナを追加し、それぞれの`config.yml`で`localhost:8080`を監視するように設定してください。
+サイドカー構成では、各アプリケーションタスクにnrdotが含まれます。複数のアプリケーションを監視する場合は、各アプリケーションのタスク定義にnrdotコンテナを追加し、それぞれの`config.yml`で`localhost:8080`を監視するように設定してください。
 
 別のアプリケーションサービスを監視する場合は、ネットワーク経由でアクセスする設定も可能です：
 
@@ -404,7 +404,7 @@ scrape_configs:
 
 ### メトリクスのフィルタリング
 
-`nri-prometheus/config.yml`の`metric_relabel_configs`でフィルタリング：
+`nrdot/config.yml`の`metric_relabel_configs`でフィルタリング：
 
 ```yaml
 metric_relabel_configs:
@@ -415,12 +415,12 @@ metric_relabel_configs:
 
 ### ホスト名の設定
 
-nri-prometheusは、起動時にECSタスクメタデータエンドポイントからタスクIDを取得し、環境変数`NRIA_HOSTNAME`に設定します。これにより、New Relicに送信されるメトリクスのホスト名がタスクIDになります。
+nrdotは、起動時にECSタスクメタデータエンドポイントからタスクIDを取得し、環境変数`NRIA_HOSTNAME`に設定します。これにより、New Relicに送信されるメトリクスのホスト名がタスクIDになります。
 
 - **ECS環境**: タスクIDが自動的にホスト名として使用されます
 - **ローカル環境（docker-compose）**: `local-<hostname>`がフォールバックとして使用されます
 
-ホスト名を手動で設定する場合は、タスク定義のnri-prometheusコンテナに環境変数`NRIA_HOSTNAME`を設定してください。
+ホスト名を手動で設定する場合は、タスク定義のnrdotコンテナに環境変数`NRIA_HOSTNAME`を設定してください。
 
 ## ライセンス
 

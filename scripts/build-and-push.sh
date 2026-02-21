@@ -45,7 +45,7 @@ echo "demo-app image pushed successfully"
 # NRDOTカスタムイメージのビルドとプッシュ（設定ファイルを含む）
 echo ""
 echo "Building NRDOT custom image with config (linux/amd64)..."
-cd "$(dirname "$0")/../nri-prometheus"
+cd "$(dirname "$0")/../nrdot"
 
 # buildxを使用してマルチプラットフォームビルド（より安定）
 if docker buildx version > /dev/null 2>&1; then
@@ -56,9 +56,9 @@ else
     DOCKER_BUILDKIT=1 docker build --platform linux/amd64 -t nrdot:latest .
 fi
 
-docker tag nrdot:latest "${ECR_BASE}/nri-prometheus:latest"
+docker tag nrdot:latest "${ECR_BASE}/nrdot:latest"
 echo "Pushing NRDOT image..."
-docker push "${ECR_BASE}/nri-prometheus:latest"
+docker push "${ECR_BASE}/nrdot:latest"
 echo "NRDOT image pushed successfully"
 
 echo ""
@@ -66,5 +66,5 @@ echo "All images built and pushed successfully!"
 echo ""
 echo "Image URIs:"
 echo "  - ${ECR_BASE}/demo-app:latest"
-echo "  - ${ECR_BASE}/nri-prometheus:latest (NRDOT with config)"
+echo "  - ${ECR_BASE}/nrdot:latest (NRDOT with config)"
 

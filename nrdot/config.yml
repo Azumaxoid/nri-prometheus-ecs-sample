@@ -25,11 +25,18 @@ processors:
   batch:
     timeout: 10s
     send_batch_size: 1024
-  # リソース属性の追加（オプション）
+  # リソース属性の追加
+  # host.name: タスクID（entrypointで TASK_ID を設定。未設定時は "unknown"）
   resource:
     attributes:
       - key: service.name
         value: demo-app
+        action: upsert
+      - key: host.name
+        value: ${TASK_ID:-unknown}
+        action: upsert
+      - key: service.instance.id
+        value: ${TASK_ID:-unknown}
         action: upsert
 
 exporters:

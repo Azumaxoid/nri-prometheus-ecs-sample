@@ -18,7 +18,7 @@ echo "AWS Region: $AWS_REGION"
 echo "AWS Account ID: $AWS_ACCOUNT_ID"
 
 # ECRリポジトリの作成
-REPOSITORIES=("demo-app" "nri-prometheus")
+REPOSITORIES=("demo-app" "nrdot")
 
 for REPO in "${REPOSITORIES[@]}"; do
     echo "Creating ECR repository: $REPO"

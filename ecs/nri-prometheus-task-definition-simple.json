@@ -8,7 +8,7 @@
   "containerDefinitions": [
     {
       "name": "nrdot",
-      "image": "YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/nri-prometheus:latest",
+      "image": "YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/nrdot:latest",
       "essential": true,
       "environment": [
         {

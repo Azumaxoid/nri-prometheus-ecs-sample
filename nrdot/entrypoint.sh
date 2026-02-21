@@ -17,16 +17,16 @@ if [ -n "$ECS_CONTAINER_METADATA_URI_V4" ]; then
     # タスクARNからタスクID（最後の部分）を抽出
     # 例: arn:aws:ecs:region:account:task/cluster-name/task-id -> task-id
     TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
-    export OTEL_RESOURCE_ATTRIBUTES="service.name=demo-app,service.instance.id=${TASK_ID}"
-    echo "Setting OTEL_RESOURCE_ATTRIBUTES with task ID: $TASK_ID"
+    export TASK_ID
+    echo "Setting TASK_ID for host.name: $TASK_ID"
   else
     echo "Warning: Could not retrieve task ID from metadata endpoint"
   fi
 else
-  # ローカル環境やdocker-compose環境の場合のフォールバック
-  if [ -z "$OTEL_RESOURCE_ATTRIBUTES" ]; then
-    export OTEL_RESOURCE_ATTRIBUTES="service.name=demo-app,service.instance.id=local-$(hostname)"
-    echo "Using fallback resource attributes: $OTEL_RESOURCE_ATTRIBUTES"
+  # ローカル環境やdocker-compose環境のフォールバック（configの ${TASK_ID:-unknown} 用）
+  if [ -z "$TASK_ID" ]; then
+    export TASK_ID="local-$(hostname)"
+    echo "Using fallback TASK_ID: $TASK_ID"
   fi
 fi
 

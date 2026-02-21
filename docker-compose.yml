@@ -21,7 +21,7 @@ services:
 
   nrdot:
     build:
-      context: ./nri-prometheus
+      context: ./nrdot
       dockerfile: Dockerfile
       platforms:
         - linux/amd64
