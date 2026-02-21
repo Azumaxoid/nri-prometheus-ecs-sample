@@ -10,7 +10,7 @@ env:
   AWS_REGION: ap-northeast-1
   ECS_CLUSTER_NAME: nri-prometheus-ecs-demo
   APP_ECR_REPO: demo-app
-  NRI_ECR_REPO: nri-prometheus
+  NRI_ECR_REPO: nrdot
   ECS_TASK_EXECUTION_ROLE: ecsTaskExecutionRole
 
 jobs:
@@ -177,7 +177,7 @@ jobs:
       - name: Build and push NRDOT image
         uses: docker/build-push-action@v5
         with:
-          context: ./nri-prometheus
+          context: ./nrdot
           push: true
           platforms: linux/amd64
           tags: |
