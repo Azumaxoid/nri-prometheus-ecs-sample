@@ -153,7 +153,7 @@ aws secretsmanager create-secret \
 
 #### 方法B: 環境変数で直接指定（デモ用）
 
-`ecs/nri-prometheus-task-definition-simple.json`の`NRIA_LICENSE_KEY`環境変数を直接編集してください。
+`ecs/app-task-definition.json`のnrdotコンテナの`secrets`（NRIA_LICENSE_KEY）を直接編集してください。
 
 ### 2. ECRリポジトリの作成
 
@@ -364,9 +364,7 @@ SELECT * FROM Metric WHERE metricName = 'http_requests_total' SINCE 1 hour ago
 │   ├── config.yml           # nrdot設定ファイル
 │   └── Dockerfile           # nrdotカスタムイメージ用Dockerfile
 ├── ecs/
-│   ├── app-task-definition.json                    # アプリケーション用タスク定義
-│   ├── nri-prometheus-task-definition.json         # nrdot用タスク定義（EFS使用）
-│   └── nri-prometheus-task-definition-simple.json  # nrdot用タスク定義（シンプル版）
+│   └── app-task-definition.json   # アプリ＋nrdotサイドカー用タスク定義
 ├── scripts/
 │   ├── setup-ecr.sh         # ECRリポジトリ作成スクリプト
 │   ├── build-and-push.sh    # イメージビルド・プッシュスクリプト
